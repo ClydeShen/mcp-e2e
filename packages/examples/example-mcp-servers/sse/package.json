@@ -1,0 +1,13 @@
+{
+  "name": "@mcp-e2e/example-sse-server",
+  "version": "1.0.0",
+  "description": "Example sse MCP server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

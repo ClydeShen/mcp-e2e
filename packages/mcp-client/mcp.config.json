@@ -1,0 +1,47 @@
+{
+  "llm": {
+    "provider": "bedrock",
+    "model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "defaultSystemPrompt": "You are a helpful AI. Today is {today_datetime}.",
+    "temperature": 0.1,
+    "max_tokens": 2048
+  },
+  "mcpProviders": [
+    {
+      "id": "example-stdio-echo",
+      "name": "Example Stdio Echo Server",
+      "type": "stdio",
+      "config": {
+        "command": ["node", "../examples/example-mcp-servers/stdio/echo.js"]
+      }
+    },
+    {
+      "id": "example-sse-time",
+      "name": "Example SSE Time Server",
+      "type": "sse",
+      "outputMode": "json",
+      "config": {
+        "url": "http://localhost:3001/events"
+      }
+    },
+    {
+      "id": "example-websocket-echo",
+      "name": "Example WebSocket Echo Server",
+      "type": "websocket",
+      "config": {
+        "url": "ws://localhost:3002"
+      }
+    },
+    {
+      "id": "example-http-post",
+      "name": "Example HTTP POST Server",
+      "type": "http",
+      "inputMode": "json",
+      "outputMode": "json",
+      "config": {
+        "url": "http://localhost:3003/data",
+        "method": "POST"
+      }
+    }
+  ]
+}
