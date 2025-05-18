@@ -1,124 +1,72 @@
 'use client';
 
-import SendIcon from '@mui/icons-material/Send';
+import { useChat } from '@ai-sdk/react';
+import { Stack } from '@mui/material';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
-import IconButton from '@mui/material/IconButton';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
-import ListItemText from '@mui/material/ListItemText';
 import Paper from '@mui/material/Paper';
-import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import * as React from 'react';
+import type { ChatBoxProps, Message } from './types';
 
-// import { useChat } from 'ai/react'; // Old import
-import { useChat } from '@ai-sdk/react'; // New import
-import { Stack } from '@mui/material';
-import type { ChatBoxProps, Message, MessageAction } from './types'; // Import new types
-
-const DefaultMessageRenderer: React.FC<{
-  message: Message;
-  messageActions?: MessageAction[];
-}> = ({ message, messageActions }) => {
-  const isUser = message.role === 'user';
-  const relevantActions = messageActions?.filter((action) =>
-    isUser ? action.type !== 'regenerate' : true
-  );
-
-  return (
-    <ListItem
-      sx={{
-        display: 'flex',
-        justifyContent: isUser ? 'flex-end' : 'flex-start',
-        mb: 1.5,
-        px: 0.5,
-      }}
-    >
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: isUser ? 'flex-end' : 'flex-start',
-          maxWidth: '80%',
-        }}
-      >
-        <Box
-          sx={{
-            p: 1.5,
-            borderRadius: 2,
-            bgcolor: isUser ? 'primary.main' : 'grey.100',
-            color: isUser ? 'primary.contrastText' : 'text.primary',
-            boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
-          }}
-        >
-          <Typography variant='body2' style={{ whiteSpace: 'pre-wrap' }}>
-            {message.content}
-          </Typography>
-        </Box>
-        {relevantActions && relevantActions.length > 0 && (
-          <Box sx={{ mt: 0.5, display: 'flex', gap: 0.5 }}>
-            {relevantActions.map((action) => (
-              <IconButton
-                key={action.type}
-                size='small'
-                onClick={() => action.handler(message)}
-                title={action.label}
-                sx={{
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  bgcolor: 'background.paper',
-                  '&:hover': { bgcolor: 'action.hover' },
-                }}
-              >
-                {action.icon || (
-                  <Typography variant='caption'>{action.label}</Typography>
-                )}
-              </IconButton>
-            ))}
-          </Box>
-        )}
-      </Box>
-    </ListItem>
-  );
-};
+// Import sub-components
+import BaseMessage from './components/BaseMessage'; // Import BaseMessage
+import ChatMessageRenderer from './components/ChatMessageRenderer'; // Import the new orchestrator
+import ChatToolbar from './components/ChatToolbar';
+import { DefaultBotAvatar } from './components/DefaultAvatars'; // Import shared DefaultBotAvatar
+import GreetingMessage from './components/GreetingMessage';
 
 export default function ChatBox(props: ChatBoxProps) {
   const {
     api,
     sx,
-    renderMessage,
+    renderMessage, // This prop will be passed to ChatMessageRenderer
     inputPlaceholder = 'Type your message...',
-    messageActions,
+    messageActions, // This prop will be passed to ChatMessageRenderer
     header,
     footer,
     initialMessages,
     initialInput,
     onFinish,
     onError,
+    showFileSelector,
+    showVoiceInput,
+    slots = {}, // Default to empty object
+    slotProps = {}, // Default to empty object
+    disableUserAvatar = false, // New prop with default
+    disableBotAvatar = false, // New prop with default
   } = props;
 
-  const {
-    messages,
-    input,
-    handleInputChange,
-    handleSubmit,
-    status,
-    error,
-    append,
-  } = useChat({
-    api: api,
-    initialMessages,
-    initialInput,
-    onFinish,
-    onError: (e: Error) => {
-      console.error('Chat error:', e);
-      if (onError) {
-        onError(e);
-      }
-    },
-  });
+  const { messages, input, handleInputChange, handleSubmit, status, error } =
+    useChat({
+      api: api,
+      initialMessages,
+      initialInput,
+      onFinish,
+      onError: (e: Error) => {
+        console.error('Chat error:', e);
+        if (onError) {
+          onError(e);
+        }
+      },
+      maxSteps: 5, // Allow multiple steps for tool calls and follow-up responses
+      async onToolCall({ toolCall }) {
+        try {
+          const minimalResultString = `Tool ${
+            toolCall.toolName
+          } called (simulated). Args: ${JSON.stringify(toolCall.args)}.`;
+          return minimalResultString;
+        } catch (e) {
+          console.error(
+            `Error executing tool ${toolCall.toolName} (simulated):`,
+            e
+          );
+          throw e;
+        }
+      },
+    });
 
   const isProcessing = status === 'submitted' || status === 'streaming';
 
@@ -127,26 +75,36 @@ export default function ChatBox(props: ChatBoxProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Example: Define a copy action if onMessageCopy was passed in an older version
-  // For now, messageActions prop is more generic
-  // const concreteMessageActions = React.useMemo(() => {
-  //   const actions: MessageAction[] = [];
-  //   if (props.onMessageCopy) { // Example of adapting an old prop
-  //     actions.push({
-  //       type: 'copy',
-  //       label: 'Copy',
-  //       icon: <ContentCopyIcon fontSize="inherit" />,
-  //       handler: (msg) => props.onMessageCopy!(msg.content),
-  //     });
-  //   }
-  //   return actions.concat(messageActions || []);
-  // }, [props.onMessageCopy, messageActions]);
+  // Determine which components to use based on slots, falling back to defaults
+  const GreetingMessageComponent = slots.greetingMessage || GreetingMessage;
+  const ChatToolbarComponent = slots.chatToolbar || ChatToolbar;
+
+  // Determine the Bot Avatar to render for the "AI is thinking..." message
+  const BotAvatarComponentToRender =
+    !disableBotAvatar && (slots.botMessageAvatar || DefaultBotAvatar);
+
+  // Prepare props for ChatMessageRenderer, including slots for individual message types
+  const chatMessageRendererSlots = {
+    userMessage: slots.userMessage,
+    botMessage: slots.botMessage,
+    botTool: slots.botTool,
+    userMessageAvatar: slots.userMessageAvatar,
+    botMessageAvatar: slots.botMessageAvatar,
+  };
+
+  const chatMessageRendererSlotProps = {
+    userMessage: slotProps.userMessage,
+    botMessage: slotProps.botMessage,
+    botTool: slotProps.botTool,
+    userMessageAvatar: slotProps.userMessageAvatar,
+    botMessageAvatar: slotProps.botMessageAvatar,
+  };
 
   return (
     <Stack spacing={1} sx={{ height: '100%', ...sx }}>
       {header}
       <Paper
-        variant='outlined'
+        elevation={0}
         sx={{
           flexGrow: 1,
           overflowY: 'auto',
@@ -159,34 +117,50 @@ export default function ChatBox(props: ChatBoxProps) {
       >
         <List sx={{ py: 0 }}>
           {messages.length === 0 && !isProcessing && !error && (
-            <ListItem>
-              <ListItemText
-                primary='Send a message to start the conversation!'
-                sx={{ textAlign: 'center', color: 'text.secondary' }}
-              />
-            </ListItem>
+            <GreetingMessageComponent {...(slotProps.greetingMessage || {})} />
           )}
-          {messages.map((m: Message) =>
-            renderMessage ? (
-              renderMessage({ message: m })
-            ) : (
-              <DefaultMessageRenderer
-                key={m.id}
-                message={m}
-                messageActions={messageActions}
-              />
-            )
-          )}
+          {messages.map((m: Message, index: number) => (
+            <ChatMessageRenderer
+              key={m.id || `message-${index}`} // Ensure key is always present
+              id={m.id || `message-item-${index}`} // Pass down an id for the renderer to use/propagate
+              message={m}
+              messageActions={messageActions}
+              customRenderMessage={renderMessage} // Pass the custom renderer prop
+              // Pass down the relevant slots and slotProps for individual message components
+              slots={chatMessageRendererSlots}
+              slotProps={chatMessageRendererSlotProps}
+              disableUserAvatar={disableUserAvatar} // Pass down
+              disableBotAvatar={disableBotAvatar} // Pass down
+            />
+          ))}
           <div ref={messagesEndRef} />
         </List>
         {isProcessing && (
-          <ListItem sx={{ justifyContent: 'center', py: 1 }}>
-            <CircularProgress size={20} />
-            <ListItemText
-              primary='AI is thinking...'
-              sx={{ ml: 1, color: 'text.secondary' }}
-            />
-          </ListItem>
+          <BaseMessage
+            id='chatbox-processing-indicator'
+            message={{
+              id: 'processing-indicator',
+              role: 'assistant',
+              content: '' /* Dummy content, not rendered directly */,
+            }}
+            avatar={BotAvatarComponentToRender || undefined}
+            avatarProps={slotProps.botMessageAvatar || {}}
+            avatarSide='left'
+            renderContent={() => <CircularProgress size={20} />}
+            bubbleSx={{
+              p: 1.5, // Padding inside the bubble
+              borderRadius: 2,
+              bgcolor: 'grey.100',
+              color: 'text.primary',
+              boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: '40px',
+              minWidth: '40px',
+            }}
+            // sx for ListItem can be added here if specific overrides are needed
+          />
         )}
         {error && (
           <ListItem sx={{ justifyContent: 'center', py: 1 }}>
@@ -205,35 +179,23 @@ export default function ChatBox(props: ChatBoxProps) {
           </ListItem>
         )}
       </Paper>
-      <Box
-        component='form'
-        onSubmit={handleSubmit}
-        sx={{
-          display: 'flex',
-          gap: 1,
-          alignItems: 'center',
-          bgcolor: 'background.paper',
-        }}
-      >
-        <TextField
-          fullWidth
-          variant='outlined'
-          placeholder={inputPlaceholder}
-          value={input}
-          onChange={handleInputChange}
-          disabled={isProcessing}
-          size='small'
-          autoComplete='off'
-        />
-        <Button
-          type='submit'
-          variant='contained'
-          endIcon={<SendIcon />}
-          disabled={isProcessing || !input.trim()}
-        >
-          Send
-        </Button>
-      </Box>
+      <ChatToolbarComponent
+        input={input}
+        handleInputChange={handleInputChange}
+        handleSubmit={handleSubmit}
+        inputPlaceholder={inputPlaceholder}
+        isProcessing={isProcessing}
+        showFileSelector={showFileSelector}
+        showVoiceInput={showVoiceInput}
+        // Spread slotProps for the toolbar, allowing overrides of default/passed props
+        {...(slotProps.chatToolbar || {})}
+        // Ensure id from slotProps can override, or generate one if ChatToolbar is the root for an id
+        id={
+          slotProps.chatToolbar?.id || props.id
+            ? `${props.id}-toolbar`
+            : undefined
+        }
+      />
       {footer}
     </Stack>
   );

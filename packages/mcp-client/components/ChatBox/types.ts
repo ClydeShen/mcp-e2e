@@ -4,6 +4,18 @@ import type { Message as VercelMessage } from '@ai-sdk/react';
 import type { SxProps, Theme } from '@mui/material/styles';
 import type React from 'react';
 
+// Import props from sub-components to make slotProps more specific
+import type { BotMessageProps } from './components/BotMessage';
+import type { BotToolProps } from './components/BotTool';
+import type { ChatToolbarProps } from './components/ChatToolbar';
+import type { ChatToolbarFileSelectorProps } from './components/ChatToolbarFileSelector';
+import type { ChatToolbarInputProps } from './components/ChatToolbarInput';
+import type { ChatToolbarSendButtonProps } from './components/ChatToolbarSendButton';
+import type { ChatToolbarVoiceInputProps } from './components/ChatToolbarVoiceInput';
+import type { GreetingMessageProps } from './components/GreetingMessage';
+import type { UserMessageProps } from './components/UserMessage';
+// import type { ChatMessageRendererProps } from './components/ChatMessageRenderer'; // If we make it a slot
+
 // Re-export Vercel's Message type for convenience or potential augmentation later
 export type Message = VercelMessage;
 
@@ -29,7 +41,45 @@ export interface MessageAction {
   handler: (message: Message) => void;
 }
 
+// Slot definitions
+export interface ChatBoxSlots {
+  greetingMessage?: React.ElementType;
+  userMessage?: React.ElementType;
+  botMessage?: React.ElementType;
+  botTool?: React.ElementType;
+  chatToolbar?: React.ElementType;
+  chatToolbarInput?: React.ElementType;
+  chatToolbarSendButton?: React.ElementType;
+  chatToolbarFileSelector?: React.ElementType;
+  chatToolbarVoiceInput?: React.ElementType;
+  // Potentially add chatMessageRenderer if we want to allow swapping the whole renderer logic
+  // chatMessageRenderer?: React.ElementType;
+  userMessageAvatar?: React.ElementType;
+  botMessageAvatar?: React.ElementType;
+}
+
+export interface ChatBoxSlotProps {
+  greetingMessage?: Partial<GreetingMessageProps>;
+  userMessage?: Partial<UserMessageProps>;
+  botMessage?: Partial<BotMessageProps>;
+  botTool?: Partial<BotToolProps>;
+  chatToolbar?: Partial<ChatToolbarProps>;
+  chatToolbarInput?: Partial<ChatToolbarInputProps>;
+  chatToolbarSendButton?: Partial<ChatToolbarSendButtonProps>;
+  chatToolbarFileSelector?: Partial<ChatToolbarFileSelectorProps>;
+  chatToolbarVoiceInput?: Partial<ChatToolbarVoiceInputProps>;
+  // chatMessageRenderer?: Partial<ChatMessageRendererProps>;
+  userMessageAvatar?: object; // Props for the user message avatar component
+  botMessageAvatar?: object; // Props for the bot message avatar component
+}
+
+// Update ChatBoxProps
 export interface ChatBoxProps {
+  /**
+   * Optional ID for the root ChatBox element, used for deriving child component IDs.
+   */
+  id?: string;
+
   /**
    * The API endpoint for the chat service.
    * (Required by useChat hook)
@@ -45,8 +95,12 @@ export interface ChatBoxProps {
    * Optional custom renderer for each message.
    * If not provided, a default MUI-based renderer will be used internally.
    * The function receives the message object.
+   * Note: If using slots for individual message types (userMessage, botMessage),
+   * this top-level renderMessage might be superseded or need careful coordination.
    */
-  renderMessage?: (props: MessageRenderProps) => React.ReactNode;
+  renderMessage?: (
+    props: MessageRenderProps & { id?: string } // Added id here as ChatMessageRenderer passes it
+  ) => React.ReactNode;
 
   /**
    * Optional placeholder text for the chat input field.
@@ -104,4 +158,31 @@ export interface ChatBoxProps {
   //   handleSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   //   isLoading: boolean;
   // }) => React.ReactNode;
+
+  showFileSelector?: boolean;
+  showVoiceInput?: boolean;
+
+  /**
+   * Optional object to override default sub-components (slots).
+   * Keys are slot names (e.g., 'userMessage', 'chatToolbar') and values are the component types.
+   */
+  slots?: ChatBoxSlots;
+
+  /**
+   * Optional object to pass custom props to slotted components.
+   * Keys are slot names and values are prop objects for that slot.
+   */
+  slotProps?: ChatBoxSlotProps;
+
+  /**
+   * If true, the default or slotted user avatar will not be rendered.
+   * @default false
+   */
+  disableUserAvatar?: boolean;
+
+  /**
+   * If true, the default or slotted bot avatar will not be rendered.
+   * @default false
+   */
+  disableBotAvatar?: boolean;
 }

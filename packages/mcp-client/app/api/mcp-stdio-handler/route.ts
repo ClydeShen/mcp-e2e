@@ -1,16 +1,87 @@
-import { getMcpProviderById, StdioConfig } from '@/lib/mcp-client-config';
-import { spawn } from 'child_process';
+import {
+  getMcpProviderById, // This is now a union type
+  McpStdioProvider,
+} from '@/lib/mcp-client-config';
+import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import { NextRequest, NextResponse } from 'next/server';
-import path from 'path';
 
-interface StdioRequest {
+interface StdioHandlerRequest {
   providerId: string;
   inputData: string;
 }
 
+interface SpawnResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+}
+
+// Helper function to spawn process and get response
+async function _spawnAndGetResponse(
+  stdioProvider: McpStdioProvider,
+  inputData: string,
+  providerId: string // Added providerId for logging consistency
+): Promise<SpawnResult> {
+  return new Promise((resolve) => {
+    const commandExecutable = stdioProvider.command;
+    const commandArgs = stdioProvider.args || [];
+
+    const child: ChildProcessWithoutNullStreams = spawn(
+      commandExecutable,
+      commandArgs,
+      {
+        cwd: stdioProvider.cwd || process.cwd(),
+        env: { ...process.env, ...stdioProvider.env },
+        stdio: ['pipe', 'pipe', 'pipe'], // Ensure stdio options are correctly typed for ChildProcessWithoutNullStreams
+      }
+    );
+
+    let stdoutData = '';
+    let stderrData = '';
+
+    child.stdout.on('data', (data) => {
+      stdoutData += data.toString();
+    });
+
+    child.stderr.on('data', (data) => {
+      stderrData += data.toString();
+    });
+
+    child.on('error', (error) => {
+      console.error(
+        `[MCP-STDIO-HANDLER] Failed to start process for "${providerId}":`,
+        error
+      );
+      // Resolve with error information, but let the main handler decide the HTTP response
+      resolve({
+        stdout: stdoutData,
+        stderr: `Failed to start STDIO process: ${error.message}`,
+        exitCode: null, // Or a specific error code if applicable
+      });
+    });
+
+    child.on('close', (code) => {
+      if (code !== 0 && stderrData === '') {
+        // check if stderrData is empty string
+        stderrData = `STDIO process for "${providerId}" exited with code ${code}`;
+      }
+      resolve({
+        stdout: stdoutData,
+        stderr: stderrData,
+        exitCode: code,
+      });
+    });
+
+    if (inputData) {
+      child.stdin.write(inputData);
+    }
+    child.stdin.end();
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as StdioRequest;
+    const body = (await req.json()) as StdioHandlerRequest;
     const { providerId, inputData } = body;
 
     if (!providerId || typeof inputData === 'undefined') {
@@ -20,142 +91,81 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const providerConfig = getMcpProviderById(providerId);
+    const provider = getMcpProviderById(providerId);
 
-    if (!providerConfig) {
+    if (!provider) {
       return NextResponse.json(
-        { error: `Provider with id ${providerId} not found.` },
+        { error: `Provider with id "${providerId}" not found.` },
         { status: 404 }
       );
     }
 
-    if (providerConfig.type !== 'stdio') {
+    // Determine effectiveType for the provider, similar to chat-handler
+    let effectiveType = provider.type;
+    if (
+      !effectiveType &&
+      'command' in provider &&
+      typeof provider.command === 'string'
+    ) {
+      effectiveType = 'stdio';
+    }
+
+    if (effectiveType !== 'stdio') {
       return NextResponse.json(
-        { error: `Provider ${providerId} is not of type stdio.` },
+        {
+          error: `Provider "${providerId}" is not a configured STDIO provider (type is '${
+            effectiveType || 'undefined'
+          }').`,
+        },
         { status: 400 }
       );
     }
 
-    const stdioConfig = providerConfig.config as StdioConfig;
-    if (!stdioConfig.command || stdioConfig.command.length === 0) {
+    // Now we can safely cast to McpStdioProvider
+    const stdioProvider = provider as McpStdioProvider;
+
+    // The command presence is already implicitly checked by the effectiveType logic for stdio,
+    // but an explicit check on stdioProvider.command (which should exist if type is stdio)
+    // isn't harmful, though might be redundant if types are strict.
+    // Given McpStdioProvider type mandates command, this specific check might be less critical here
+    // if effectiveType derivation is robust.
+    // For now, let's rely on the effectiveType === 'stdio' implying command exists as per McpStdioProvider type.
+
+    // Call the helper function
+    const result = await _spawnAndGetResponse(
+      stdioProvider,
+      inputData,
+      providerId
+    );
+
+    // Determine response based on helper function's result
+    if (result.stderr && result.exitCode !== 0 && result.exitCode !== null) {
+      // Added null check for exitCode
+      // If there was an error starting the process (indicated by specific stderr from _spawnAndGetResponse error handler)
+      // or if the process exited with an error code.
+      // Note: _spawnAndGetResponse's 'error' event already logs to console.
       return NextResponse.json(
         {
-          error: `Provider ${providerId} has invalid stdio command configuration.`,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          exitCode: result.exitCode,
         },
-        { status: 500 }
+        // Optionally, decide status based on exitCode or specific stderr messages
+        result.stderr.startsWith('Failed to start STDIO process:')
+          ? { status: 500 }
+          : { status: 200 } // Or 400/500 based on error type
       );
     }
 
-    // Resolve command path relative to monorepo root if it looks like a path
-    // This is a simple heuristic; adjust if necessary for your command structure
-    const commandParts = [...stdioConfig.command];
-    const executable = commandParts[0];
-    const args = commandParts.slice(1);
-
-    // Determine CWD: Use providerConfig.config.cwd or default to monorepo root for path resolution
-    // For simplicity, assuming commands are often specified relative to the monorepo root or are globally available.
-    // If a command is like `node ./packages/some-script.js`, process.cwd() (mcp-client package root) might not be correct.
-    // Using an absolute path or a CWD relative to the monorepo root might be more robust.
-    // For now, let's assume commands are either global or paths are handled by the execution environment correctly.
-    // A more robust solution might involve resolving paths based on a known monorepo root marker.
-    const effectiveCwd = stdioConfig.cwd
-      ? path.resolve(process.cwd(), '../../', stdioConfig.cwd)
-      : path.resolve(process.cwd(), '../../');
-    // process.cwd() for an API route in Next.js is typically the root of the Next.js project (e.g., packages/mcp-client)
-    // So, '../../' goes up to the monorepo root (mcp-e2e)
-
-    return new Promise((resolve) => {
-      const child = spawn(executable, args, {
-        cwd: effectiveCwd, // TR_CONFIG_004: Optional cwd
-        env: { ...process.env, ...stdioConfig.env }, // TR_CONFIG_004: Optional env
-        stdio: ['pipe', 'pipe', 'pipe'], // stdin, stdout, stderr
-      });
-
-      let stdoutData = '';
-      let stderrData = '';
-      let errorOccurred = false;
-
-      child.stdout.on('data', (data) => {
-        stdoutData += data.toString();
-      });
-
-      child.stderr.on('data', (data) => {
-        stderrData += data.toString();
-      });
-
-      child.on('error', (err) => {
-        errorOccurred = true;
-        console.error(
-          `[mcp-stdio-handler] Failed to start process for ${providerId}:`,
-          err
-        );
-        resolve(
-          NextResponse.json(
-            {
-              error: `Failed to start process: ${err.message}`,
-              stderr: stderrData,
-              stdout: stdoutData,
-            },
-            { status: 500 }
-          )
-        );
-      });
-
-      child.on('close', (code) => {
-        if (errorOccurred) return; // Error already handled by 'error' event
-
-        if (code === 0) {
-          resolve(
-            NextResponse.json({
-              output: stdoutData,
-              stderr: stderrData || undefined,
-            })
-          );
-        } else {
-          console.error(
-            `[mcp-stdio-handler] Process for ${providerId} exited with code ${code}. Stderr: ${stderrData}`
-          );
-          resolve(
-            NextResponse.json(
-              {
-                error: `Process exited with code ${code}.`,
-                stderr: stderrData,
-                stdout: stdoutData,
-              },
-              { status: 500 }
-            )
-          );
-        }
-      });
-
-      try {
-        child.stdin.write(inputData);
-        child.stdin.end();
-      } catch (stdinError: any) {
-        errorOccurred = true;
-        console.error(
-          `[mcp-stdio-handler] Error writing to stdin for ${providerId}:`,
-          stdinError
-        );
-        // Try to kill the process if it started, as stdin is broken
-        child.kill();
-        resolve(
-          NextResponse.json(
-            {
-              error: `Error writing to stdin: ${stdinError.message}`,
-              stderr: stderrData,
-              stdout: stdoutData,
-            },
-            { status: 500 }
-          )
-        );
-      }
-    });
+    return NextResponse.json(result); // This will send { stdout, stderr, exitCode }
   } catch (error: any) {
-    console.error('[mcp-stdio-handler] Error:', error);
-    return NextResponse.json(
-      { error: error.message || 'An unexpected error occurred.' },
-      { status: 500 }
-    );
+    console.error('[MCP-STDIO-HANDLER] Error:', error);
+    let errorMessage = 'An unexpected error occurred.';
+    if (error instanceof SyntaxError) {
+      errorMessage = 'Invalid JSON in request body.';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

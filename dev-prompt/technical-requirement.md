@@ -138,29 +138,34 @@
 
 - **TR_CONFIG_002**: Root Structure
 
-  - **Description**: The root of the JSON object MAY contain optional metadata keys like `"$schema"` and `version`. The primary data MUST be under a key named `"mcpProviders"`, which MUST be an array of provider objects.
-  - **Rationale**: Standard array structure for easier parsing and extensibility.
+  - **Description**: The root of the JSON object MAY contain optional metadata keys like `"$schema"` and `version`. The primary data MUST be under a key named `"mcpProviders"`, which MUST be an **object** where each key is a unique provider ID and each value is a provider configuration object.
+  - **Rationale**: Key-value structure for direct provider lookup by ID.
 
-- **TR_CONFIG_003**: Core Provider Object Structure
+- **TR_CONFIG_003**: Provider Object Structure (Value in `mcpProviders` map)
 
-  - **Description**: Each object within the `mcpProviders` array MUST define an MCP Provider and, at a minimum, contain the following keys:
-    - `id` (String, Required): A unique machine-readable identifier.
+  - **Description**: Each provider object (the value associated with a provider ID key in `mcpProviders`) MUST contain:
     - `name` (String, Required): A human-readable name for display.
-    - `type` (String, Required): The transport/provider type (e.g., "stdio", "sse", "websocket", "http").
-    - `config` (Object, Required): An object containing type-specific configuration details.
-  - **Optional_Core_Provider_Keys**: The following keys MAY also be present at this level:
+    - `type` (String, Optional): The transport/provider type (e.g., "stdio", "sse", "websocket", "http").
+      - If `command` (see TR_CONFIG_004) is present directly in the provider object, `type` defaults to "stdio" if omitted.
+  - **Provider-Specific Configuration**:
+    - **For `stdio` providers**: See TR_CONFIG_004. STDIO specific fields (`command`, `args`, etc.) are direct properties of the provider object.
+    - **For `http`, `sse`, `websocket` providers**: These types MUST have a `config` (Object, Required) property containing their type-specific connection details (see TR_CONFIG_005, TR_CONFIG_006, TR_CONFIG_007).
+  - **Optional_Provider_Keys**: The following keys MAY also be present directly within the provider object:
     - `description` (String, Optional): A brief description of the provider.
     - `capabilities` (Array of Strings, Optional): Tags describing provider functionality.
     - `enabled` (Boolean, Optional, Default: true): To toggle provider availability.
   - **Note**: `inputMode` and `outputMode` are NOT part of this configuration structure. Data formatting/parsing is handled by the application logic using the SDK.
-  - **Rationale**: Provides essential identification, typing, and connection information for each provider. Application logic determines data format conventions per provider.
+  - **Rationale**: Provides essential identification, typing, and connection information. STDIO configuration is flattened for directness, while other types use a nested `config` object for their parameters.
 
-- **TR_CONFIG_004**: `config` Object for `type: "stdio"`
+- **TR_CONFIG_004**: Direct Properties for `stdio` Providers
 
-  - **Description**: For providers with `type: "stdio"`, the `config` object MUST contain:
-    - `command` (Array of Strings, Required): The command and its arguments to execute.
-  - **Optional_stdio_config_Keys**: `cwd`, `env`.
-  - **Rationale**: Specifies how to launch stdio-based providers.
+  - **Description**: Providers identified as `stdio` (either by an explicit `type: "stdio"` or implicitly by the presence of a `command: string` property directly in the provider object) MUST have the following direct properties:
+    - `command` (String, Required): The executable command to run.
+    - `args` (Array of Strings, Optional): Arguments for the command. If not provided, defaults to an empty array.
+  - **Optional_stdio_direct_properties**: The following MAY also be direct properties on an STDIO provider object:
+    - `cwd` (String, Optional): The working directory for the command.
+    - `env` (Object, Optional): Environment variables for the command.
+  - **Rationale**: Specifies how to launch stdio-based providers with direct properties for clarity and ease of use with `child_process.spawn`.
 
 - **TR_CONFIG_005**: `config` Object for `type: "sse"`
 
@@ -228,19 +233,23 @@
     - Its `package.json` SHOULD define its name as `@"mcp-e2e/mcp-client"`.
   - **Rationale**: Centralizes all frontend application code, configuration, and Next.js specific files.
 
-- **TR_FOLDER_004**: `packages/mcp-servers-core/` (Optional, for Reusable Server Logic)
+- **TR_FOLDER_004**: `packages/mcp-servers-core/` (Removed / Not Used for Current Phase)
 
-  - **Description**: This package is designated for any core, reusable libraries, base classes, or utility functions that might be developed for building more sophisticated MCP servers in the future, beyond the simple examples. For the initial PoC, this package MAY be minimal or contain only foundational shared utilities if any.
-  - **Specification**: If it contains sub-packages, they should follow standard naming and structure. Its `package.json` (if it's a collection root) might be named `@"mcp-e2e/mcp-servers-core"`.
-  - **Rationale**: Provides a designated place for non-example, potentially reusable MCP server building blocks, separating them from one-off demo examples.
+  - **Description**: This directory is not utilized for the current phase, which focuses on standalone, decoupled example servers under `packages/agents/`. Any previous plans for reusable core server logic in this package are deferred.
+  - **Rationale**: Simplifies focus on demonstrating individual transport types via self-contained examples in `packages/agents/`.
 
-- **TR_FOLDER_005**: `packages/examples/`
+- **TR_FOLDER_005**: `packages/agents/` (Formerly `packages/examples/`)
 
-  - **Description**: This package MUST contain subdirectories for various runnable examples that demonstrate the capabilities of the `mcp-client` and different MCP concepts.
+  - **Description**: This package MUST contain subdirectories for various runnable examples and agent-related components. This includes standalone example MCP servers demonstrating different transport protocols.
   - **Specification**:
-    - **`examples/example-mcp-servers/`**: This sub-package MUST contain further subdirectories for each example MCP server, categorized by transport type (e.g., `stdio/`, `sse/`, `websocket/`, `http/`). Each example server script (e.g., `echo.js`, `server.js`) and its minimal `package.json` (e.g., named `@"mcp-e2e/example-stdio-server"`) will reside in its respective directory. The `command` paths in `mcp.config.json` will reference these scripts (e.g., `node ./packages/examples/example-mcp-servers/stdio/echo.js` if run from monorepo root, or a relative path if the `cwd` is set appropriately).
-    - **`examples/example-bedrock-agent-action-group/`**: This sub-package MUST contain the source code (e.g., `src/index.ts`) and deployment configuration (e.g., SAM `template.yaml`) for an example AWS Lambda function designed to be used as an Action Group for Amazon Bedrock Agent (as per Flow 1 in the sequence diagram). Its `package.json` might be named `@"mcp-e2e/example-action-group"`.
-  - **Rationale**: Consolidates all demonstration code, making it easy to find, run, and understand the example interactions.
+    - **Example MCP Servers**: Subdirectories for each example MCP server, categorized directly by transport type, MUST exist within `packages/agents/`. For example:
+      - `packages/agents/stdio/`
+      - `packages/agents/sse/`
+      - `packages/agents/websocket/`
+      - `packages/agents/http/`
+        Each of these directories will contain its respective example server script (e.g., `echo.js`, `server.js`) and a minimal `package.json` (e.g., named `@"mcp-e2e/agent-stdio-server"`). The `command` paths in `mcp.config.json` will reference these scripts (e.g., `node ./packages/agents/stdio/echo.js` if run from monorepo root, or a relative path if `cwd` is set).
+    - **`agents/example-bedrock-agent-action-group/`**: (If still applicable) This sub-package MUST contain the source code (e.g., `src/index.ts`) and deployment configuration (e.g., SAM `template.yaml`) for an example AWS Lambda function designed to be used as an Action Group for Amazon Bedrock Agent. Its `package.json` might be named `@"mcp-e2e/example-action-group"`.
+  - **Rationale**: Consolidates demonstration code and agent components, making them easy to find, run, and understand. The direct structure for example servers emphasizes their standalone nature.
 
 - **TR_FOLDER_006**: `packages/shared-types/`
 
