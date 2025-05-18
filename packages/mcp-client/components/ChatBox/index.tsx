@@ -53,17 +53,75 @@ export default function ChatBox(props: ChatBoxProps) {
       },
       maxSteps: 5, // Allow multiple steps for tool calls and follow-up responses
       async onToolCall({ toolCall }) {
-        try {
-          const minimalResultString = `Tool ${
-            toolCall.toolName
-          } called (simulated). Args: ${JSON.stringify(toolCall.args)}.`;
-          return minimalResultString;
-        } catch (e) {
-          console.error(
-            `Error executing tool ${toolCall.toolName} (simulated):`,
-            e
+        const { toolName, args } = toolCall;
+
+        if (toolName.startsWith('filesystem_')) {
+          const providerId = 'filesystem';
+          // Extract the actual command name, e.g., 'directory_tree' from 'filesystem_directory_tree'
+          const commandName = toolName.substring(providerId.length + 1);
+
+          // Construct the payload expected by the filesystem STDIO server
+          const stdioServerPayload = {
+            command: commandName,
+            args: args, // The arguments from the LLM for that specific command
+          };
+
+          try {
+            console.log(
+              `[ChatBox] Executing tool: ${toolName} for provider: ${providerId} with payload:`,
+              stdioServerPayload
+            );
+            const response = await fetch('/api/execute-tool', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                providerId: providerId,
+                toolArgs: stdioServerPayload, // This will be stringified again by execute-tool route for inputData
+              }),
+            });
+
+            if (!response.ok) {
+              const errorData = await response
+                .json()
+                .catch(() => ({ error: response.statusText }));
+              console.error(
+                `[ChatBox] Error from /api/execute-tool for ${toolName}: ${
+                  errorData.error || response.statusText
+                }`
+              );
+              throw new Error(
+                `Tool execution via API failed for ${toolName}: ${
+                  errorData.error || response.statusText
+                }`
+              );
+            }
+
+            const responseData = await response.json();
+            console.log(
+              `[ChatBox] Result from /api/execute-tool for ${toolName}:`,
+              responseData.result
+            );
+            return responseData.result; // The AI SDK expects the direct result here
+          } catch (e: any) {
+            console.error(
+              `[ChatBox] Failed to execute tool ${toolName} via /api/execute-tool:`,
+              e
+            );
+            // Let the error propagate to useChat's onError or throw it
+            // To make it visible in UI, ensure it's an Error object or string
+            throw new Error(
+              `Execution failed for ${toolName}: ${e.message || e.toString()}`
+            );
+          }
+        } else {
+          // Fallback for other tools (e.g., aws-documentation) or if a tool isn't handled above
+          console.warn(
+            `[ChatBox] Simulating tool call for unhandled tool: ${toolName}`
           );
-          throw e;
+          const minimalResultString = `Tool ${toolName} called (simulated). Args: ${JSON.stringify(
+            args
+          )}.`;
+          return minimalResultString;
         }
       },
     });

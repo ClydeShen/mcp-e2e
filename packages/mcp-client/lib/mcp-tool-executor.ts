@@ -2,12 +2,10 @@ import {
   getMcpProviderById,
   HttpConfig,
   McpHtttpProvider,
+  McpProviderConfig,
   McpSseProvider,
   McpStdioProvider,
   McpWebSocketProvider,
-  SseConfig,
-  WebSocketConfig,
-  McpProviderConfig,
 } from './mcp-client-config';
 
 export interface McpToolExecutionResult {
@@ -23,7 +21,19 @@ async function _executeStdioViaApi(
   inputData: string
 ): Promise<McpToolExecutionResult> {
   const providerId = providerConfig.id;
-  const stdioResponse = await fetch('/api/mcp-stdio-handler', {
+
+  // Construct the absolute URL for the API endpoint
+  const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3000'; // Fallback for safety, but ENV var is better
+  if (!process.env.APP_BASE_URL) {
+    console.warn(
+      '[mcp-tool-executor] APP_BASE_URL environment variable is not set. Defaulting to http://localhost:3000. This might not work in deployed environments.'
+    );
+  }
+  const apiUrl = `${baseUrl}/api/mcp-stdio-handler`;
+
+  console.log(`[mcp-tool-executor] Calling STDIO handler via API: ${apiUrl}`); // Log the URL being called
+
+  const stdioResponse = await fetch(apiUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -43,9 +53,24 @@ async function _executeStdioViaApi(
     };
   }
   const stdioResult = await stdioResponse.json();
+  console.log(
+    `[mcp-tool-executor] Result from STDIO handler for provider '${providerId}':`,
+    stdioResult
+  );
+
+  // Only treat stderr as an error if the exit code was non-zero
+  const executionError =
+    stdioResult.exitCode !== 0 ? stdioResult.stderr : undefined;
+  // If there was stderr output but exit code was 0, it might be just logs/warnings.
+  // We could choose to log stdioResult.stderr here if exitCode is 0 and stderr is not empty.
+  if (stdioResult.exitCode === 0 && stdioResult.stderr) {
+    console.log(`[mcp-tool-executor] STDIO provider '${providerId}' wrote to stderr (exit code 0):
+${stdioResult.stderr}`);
+  }
+
   return {
-    output: stdioResult.stdout, // Changed from stdioResult.output to stdioResult.stdout
-    error: stdioResult.stderr, // Changed from stdioResult.error to stdioResult.stderr
+    output: stdioResult.stdout,
+    error: executionError,
     providerId,
   };
 }
@@ -151,15 +176,17 @@ async function _executeWebSocket(
 }
 
 // Define a type for the handler functions for better type safety in the map
-type ToolExecutor = ( 
-  providerConfig: McpProviderConfig, 
+type ToolExecutor = (
+  providerConfig: McpProviderConfig,
   inputData: string
 ) => Promise<McpToolExecutionResult>;
 
 // Handler map
-const providerExecutorMap: Partial<Record<McpProviderConfig['type'], ToolExecutor>> = {
+const providerExecutorMap: Partial<
+  Record<McpProviderConfig['type'], ToolExecutor>
+> = {
   stdio: _executeStdioViaApi as ToolExecutor, // Cast needed due to specific type in helper
-  http: _executeHttp as ToolExecutor,       // Cast needed
+  http: _executeHttp as ToolExecutor, // Cast needed
   sse: (providerConfig) => _executeSse(providerConfig as McpSseProvider), // Wrapper for sse
   websocket: _executeWebSocket as ToolExecutor, // Cast needed
 };
@@ -191,7 +218,9 @@ export async function executeMcpTool(
       // This case should ideally not be reached if McpProviderConfig['type'] is exhaustive
       // and providerExecutorMap covers all types.
       return {
-        error: `MCP Provider type '${(providerConfig as any).type}' for ID '${currentProviderId}' is not supported by executeMcpTool.`,
+        error: `MCP Provider type '${
+          (providerConfig as any).type
+        }' for ID '${currentProviderId}' is not supported by executeMcpTool.`,
         providerId: currentProviderId,
       };
     }

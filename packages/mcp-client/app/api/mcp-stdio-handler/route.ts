@@ -39,11 +39,21 @@ async function _spawnAndGetResponse(
     let stdoutData = '';
     let stderrData = '';
 
-    child.stdout.on('data', (data) => {
+    child.stdout.on('data', (data: Buffer) => {
+      console.log('[MCP-STDIO-HANDLER] Raw STDOUT Data Chunk (Buffer):', data);
+      console.log(
+        '[MCP-STDIO-HANDLER] Raw STDOUT Data Chunk (String):',
+        data.toString()
+      );
       stdoutData += data.toString();
     });
 
-    child.stderr.on('data', (data) => {
+    child.stderr.on('data', (data: Buffer) => {
+      console.log('[MCP-STDIO-HANDLER] Raw STDERR Data Chunk (Buffer):', data);
+      console.log(
+        '[MCP-STDIO-HANDLER] Raw STDERR Data Chunk (String):',
+        data.toString()
+      );
       stderrData += data.toString();
     });
 
@@ -61,6 +71,15 @@ async function _spawnAndGetResponse(
     });
 
     child.on('close', (code) => {
+      console.log(
+        `[MCP-STDIO-HANDLER] Child process for "${providerId}" closed with code ${code}.`
+      );
+      console.log(
+        `[MCP-STDIO-HANDLER] STDOUT for "${providerId}":\n${stdoutData}`
+      );
+      console.log(
+        `[MCP-STDIO-HANDLER] STDERR for "${providerId}":\n${stderrData}`
+      );
       if (code !== 0 && stderrData === '') {
         // check if stderrData is empty string
         stderrData = `STDIO process for "${providerId}" exited with code ${code}`;
@@ -72,8 +91,11 @@ async function _spawnAndGetResponse(
       });
     });
 
+    console.log(
+      `[MCP-STDIO-HANDLER] Writing to STDIN for "${providerId}":\n${inputData}`
+    );
     if (inputData) {
-      child.stdin.write(inputData);
+      child.stdin.write(inputData + '\n');
     }
     child.stdin.end();
   });

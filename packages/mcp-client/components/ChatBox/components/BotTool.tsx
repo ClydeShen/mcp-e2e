@@ -4,6 +4,7 @@ import Accordion from '@mui/material/Accordion';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import Box from '@mui/material/Box';
+import Chip from '@mui/material/Chip';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import React from 'react';
@@ -12,9 +13,69 @@ export interface BotToolProps {
   id?: string;
   toolInvocation: ToolInvocation;
   sx?: object; // Allow style overrides for the Accordion
+  statusDisplay?: React.ElementType; // Slot for custom status display
+  statusDisplayProps?: object; // Props for the custom status display
 }
 
-const BotTool: React.FC<BotToolProps> = ({ id, toolInvocation, sx }) => {
+// Helper to determine Chip color based on status
+const getStatusChipColor = (
+  status: string
+):
+  | 'default'
+  | 'primary'
+  | 'secondary'
+  | 'error'
+  | 'info'
+  | 'success'
+  | 'warning' => {
+  switch (status) {
+    case 'Called':
+    case 'Streaming...':
+      return 'info';
+    case 'Complete':
+      return 'success';
+    case 'Error':
+      return 'error';
+    case 'Pending...':
+      return 'warning';
+    default:
+      return 'default';
+  }
+};
+
+interface DefaultStatusDisplayProps {
+  toolName: string;
+  status: string;
+}
+
+const DefaultStatusDisplay: React.FC<DefaultStatusDisplayProps> = ({
+  toolName,
+  status,
+}) => (
+  <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+    <Typography
+      variant='caption'
+      sx={{ fontWeight: 'bold', mr: 1, flexShrink: 0 }}
+    >
+      Tool: {toolName}
+    </Typography>
+    <Chip
+      label={status}
+      color={getStatusChipColor(status)}
+      size='small'
+      variant='outlined'
+      sx={{ mr: 'auto' }} // Pushes icon to the right if summary is flex
+    />
+  </Box>
+);
+
+const BotTool: React.FC<BotToolProps> = ({
+  id,
+  toolInvocation,
+  sx,
+  statusDisplay,
+  statusDisplayProps,
+}) => {
   if (!toolInvocation) return null;
 
   const toolName = toolInvocation.toolName;
@@ -44,6 +105,8 @@ const BotTool: React.FC<BotToolProps> = ({ id, toolInvocation, sx }) => {
     }
   }
 
+  const StatusDisplayComponent = statusDisplay || DefaultStatusDisplay;
+
   return (
     <Accordion id={id} sx={{ mb: 1, width: '100%', bgcolor: 'grey.50', ...sx }}>
       <AccordionSummary
@@ -51,9 +114,11 @@ const BotTool: React.FC<BotToolProps> = ({ id, toolInvocation, sx }) => {
         aria-controls={`panel-${toolCallId}-content`}
         id={`panel-${toolCallId}-header`}
       >
-        <Typography variant='caption' sx={{ fontWeight: 'bold' }}>
-          Tool: {toolName} (Status: {status})
-        </Typography>
+        <StatusDisplayComponent
+          toolName={toolName}
+          status={status}
+          {...(statusDisplayProps || {})}
+        />
       </AccordionSummary>
       <AccordionDetails sx={{ bgcolor: 'white' }}>
         <Box>
