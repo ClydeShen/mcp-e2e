@@ -56,6 +56,7 @@ export interface ChatBoxSlots {
   // chatMessageRenderer?: React.ElementType;
   userMessageAvatar?: React.ElementType;
   botMessageAvatar?: React.ElementType;
+  statusDisplay?: React.ElementType;
 }
 
 export interface ChatBoxSlotProps {
@@ -71,6 +72,7 @@ export interface ChatBoxSlotProps {
   // chatMessageRenderer?: Partial<ChatMessageRendererProps>;
   userMessageAvatar?: object; // Props for the user message avatar component
   botMessageAvatar?: object; // Props for the bot message avatar component
+  statusDisplayProps?: Record<string, any>;
 }
 
 // Update ChatBoxProps
@@ -185,4 +187,6 @@ export interface ChatBoxProps {
    * @default false
    */
   disableBotAvatar?: boolean;
+
+  maxSteps?: number;
 }

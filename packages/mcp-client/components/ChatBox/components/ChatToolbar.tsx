@@ -1,4 +1,6 @@
+import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import Box from '@mui/material/Box';
+import IconButton from '@mui/material/IconButton';
 import React from 'react';
 import ChatToolbarFileSelector from './ChatToolbarFileSelector'; // Placeholder
 import ChatToolbarInput from './ChatToolbarInput';
@@ -12,6 +14,7 @@ export interface ChatToolbarProps {
   handleSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   inputPlaceholder?: string;
   isProcessing?: boolean;
+  onStopProcessing?: () => void; // ADDED
   showFileSelector?: boolean; // To control visibility
   showVoiceInput?: boolean; // To control visibility
   sx?: object;
@@ -24,6 +27,7 @@ const ChatToolbar: React.FC<ChatToolbarProps> = ({
   handleSubmit,
   inputPlaceholder,
   isProcessing,
+  onStopProcessing, // Destructured
   showFileSelector = false, // Default to not showing
   showVoiceInput = false, // Default to not showing
   sx,
@@ -32,7 +36,13 @@ const ChatToolbar: React.FC<ChatToolbarProps> = ({
     <Box
       id={id} // Apply id
       component='form'
-      onSubmit={handleSubmit}
+      onSubmit={(e) => {
+        if (!isProcessing) {
+          handleSubmit(e);
+        } else {
+          e.preventDefault(); // Prevent submit if Stop is visible
+        }
+      }}
       sx={{
         display: 'flex',
         gap: 1,
@@ -46,27 +56,39 @@ const ChatToolbar: React.FC<ChatToolbarProps> = ({
     >
       {showFileSelector && (
         <ChatToolbarFileSelector
-          id={`${id}-file-selector`}
+          id={id ? `${id}-file-selector` : undefined}
           disabled={isProcessing}
         />
       )}
       {showVoiceInput && (
         <ChatToolbarVoiceInput
-          id={`${id}-voice-input`}
+          id={id ? `${id}-voice-input` : undefined}
           disabled={isProcessing}
         />
       )}
       <ChatToolbarInput
-        id={`${id}-input`} // Example child id
+        id={id ? `${id}-input` : undefined} // Example child id
         value={input}
         onChange={handleInputChange}
         placeholder={inputPlaceholder}
         disabled={isProcessing}
       />
-      <ChatToolbarSendButton
-        id={`${id}-send-button`}
-        disabled={isProcessing || !input.trim()}
-      />
+      {isProcessing ? (
+        <IconButton
+          id={id ? `${id}-stop-button` : 'chatbox-stop-icon-button'}
+          color='error'
+          onClick={onStopProcessing}
+          aria-label='stop processing'
+          size='small'
+        >
+          <StopCircleOutlinedIcon />
+        </IconButton>
+      ) : (
+        <ChatToolbarSendButton
+          id={id ? `${id}-send-button` : undefined}
+          disabled={!input.trim()} // Send button is only disabled if input is empty (isProcessing is false here)
+        />
+      )}
       {/* ChatboxToolbarRegenerationButton would likely live outside or be passed in conditionally */}
     </Box>
   );

@@ -39,94 +39,113 @@ export default function ChatBox(props: ChatBoxProps) {
     disableBotAvatar = false, // New prop with default
   } = props;
 
-  const { messages, input, handleInputChange, handleSubmit, status, error } =
-    useChat({
-      api: api,
-      initialMessages,
-      initialInput,
-      onFinish,
-      onError: (e: Error) => {
-        console.error('Chat error:', e);
-        if (onError) {
-          onError(e);
-        }
-      },
-      maxSteps: 5, // Allow multiple steps for tool calls and follow-up responses
-      async onToolCall({ toolCall }) {
-        const { toolName, args } = toolCall;
+  const abortControllerRef = React.useRef<AbortController | null>(null);
 
-        if (toolName.startsWith('filesystem_')) {
-          const providerId = 'filesystem';
-          // Extract the actual command name, e.g., 'directory_tree' from 'filesystem_directory_tree'
-          const commandName = toolName.substring(providerId.length + 1);
+  const {
+    messages,
+    input,
+    handleInputChange,
+    handleSubmit,
+    status,
+    error,
+    stop,
+  } = useChat({
+    api: api,
+    initialMessages,
+    initialInput,
+    onFinish,
+    onError: (e: Error) => {
+      console.error('[ChatBox:useChat] Chat error:', e.message, e);
+      if (onError) {
+        onError(e);
+      }
+    },
+    maxSteps: 5, // Allow multiple steps for tool calls and follow-up responses
+    async onToolCall({ toolCall }) {
+      const { toolName, args } = toolCall;
 
-          // Construct the payload expected by the filesystem STDIO server
-          const stdioServerPayload = {
-            command: commandName,
-            args: args, // The arguments from the LLM for that specific command
-          };
+      if (toolName.startsWith('filesystem_')) {
+        const providerId = 'filesystem';
+        // Extract the actual command name, e.g., 'directory_tree' from 'filesystem_directory_tree'
+        const commandName = toolName.substring(providerId.length + 1);
 
-          try {
-            console.log(
-              `[ChatBox] Executing tool: ${toolName} for provider: ${providerId} with payload:`,
-              stdioServerPayload
-            );
-            const response = await fetch('/api/execute-tool', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                providerId: providerId,
-                toolArgs: stdioServerPayload, // This will be stringified again by execute-tool route for inputData
-              }),
-            });
+        // Construct the payload expected by the filesystem STDIO server
+        const stdioServerPayload = {
+          command: commandName,
+          args: args, // The arguments from the LLM for that specific command
+        };
 
-            if (!response.ok) {
-              const errorData = await response
-                .json()
-                .catch(() => ({ error: response.statusText }));
-              console.error(
-                `[ChatBox] Error from /api/execute-tool for ${toolName}: ${
-                  errorData.error || response.statusText
-                }`
-              );
-              throw new Error(
-                `Tool execution via API failed for ${toolName}: ${
-                  errorData.error || response.statusText
-                }`
-              );
-            }
+        try {
+          console.log(
+            `[ChatBox] Executing tool: ${toolName} for provider: ${providerId} with payload:`,
+            stdioServerPayload
+          );
+          const response = await fetch('/api/execute-tool', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              providerId: providerId,
+              toolArgs: stdioServerPayload, // This will be stringified again by execute-tool route for inputData
+            }),
+          });
 
-            const responseData = await response.json();
-            console.log(
-              `[ChatBox] Result from /api/execute-tool for ${toolName}:`,
-              responseData.result
-            );
-            return responseData.result; // The AI SDK expects the direct result here
-          } catch (e: any) {
+          if (!response.ok) {
+            const errorData = await response
+              .json()
+              .catch(() => ({ error: response.statusText }));
             console.error(
-              `[ChatBox] Failed to execute tool ${toolName} via /api/execute-tool:`,
-              e
+              `[ChatBox] Error from /api/execute-tool for ${toolName}: ${
+                errorData.error || response.statusText
+              }`
             );
-            // Let the error propagate to useChat's onError or throw it
-            // To make it visible in UI, ensure it's an Error object or string
             throw new Error(
-              `Execution failed for ${toolName}: ${e.message || e.toString()}`
+              `Tool execution via API failed for ${toolName}: ${
+                errorData.error || response.statusText
+              }`
             );
           }
-        } else {
-          // Fallback for other tools (e.g., aws-documentation) or if a tool isn't handled above
-          console.warn(
-            `[ChatBox] Simulating tool call for unhandled tool: ${toolName}`
-          );
-          const minimalResultString = `Tool ${toolName} called (simulated). Args: ${JSON.stringify(
-            args
-          )}.`;
-          return minimalResultString;
-        }
-      },
-    });
 
-  const isProcessing = status === 'submitted' || status === 'streaming';
+          const responseData = await response.json();
+          console.log(
+            `[ChatBox] Result from /api/execute-tool for ${toolName}:`,
+            responseData.result
+          );
+          return responseData.result; // The AI SDK expects the direct result here
+        } catch (e: any) {
+          console.error(
+            `[ChatBox] Failed to execute tool ${toolName} via /api/execute-tool:`,
+            e
+          );
+          // Let the error propagate to useChat's onError or throw it
+          // To make it visible in UI, ensure it's an Error object or string
+          throw new Error(
+            `Execution failed for ${toolName}: ${e.message || e.toString()}`
+          );
+        }
+      } else {
+        // Fallback for other tools (e.g., aws-documentation) or if a tool isn't handled above
+        console.warn(
+          `[ChatBox] Simulating tool call for unhandled tool: ${toolName}`
+        );
+        const minimalResultString = `Tool ${toolName} called (simulated). Args: ${JSON.stringify(
+          args
+        )}.`;
+        return minimalResultString;
+      }
+    },
+  });
+
+  // Vercel AI SDK useChat status can be 'idle', 'loading', 'streaming'
+  const isActive =
+    (status as string) === 'loading' || (status as string) === 'streaming';
+
+  const handleStopProcessing = () => {
+    stop(); // From useChat, stops the LLM response generation
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort(); // Abort any ongoing fetch in onToolCall
+    }
+    console.log('[ChatBox:Toolbar] Stop processing initiated.');
+  };
 
   const messagesEndRef = React.useRef<null | HTMLDivElement>(null);
   React.useEffect(() => {
@@ -148,6 +167,7 @@ export default function ChatBox(props: ChatBoxProps) {
     botTool: slots.botTool,
     userMessageAvatar: slots.userMessageAvatar,
     botMessageAvatar: slots.botMessageAvatar,
+    statusDisplay: slots.statusDisplay,
   };
 
   const chatMessageRendererSlotProps = {
@@ -156,10 +176,17 @@ export default function ChatBox(props: ChatBoxProps) {
     botTool: slotProps.botTool,
     userMessageAvatar: slotProps.userMessageAvatar,
     botMessageAvatar: slotProps.botMessageAvatar,
+    statusDisplayProps: slotProps.statusDisplayProps,
   };
 
+  const lastMessage =
+    messages.length > 0 ? messages[messages.length - 1] : undefined;
+  // Show processing indicator (spinner) if active and last message isn't a tool result (meaning AI is thinking text)
+  const showProcessingIndicator =
+    isActive && (!lastMessage || (lastMessage.role as string) !== 'tool');
+
   return (
-    <Stack spacing={1} sx={{ height: '100%', ...sx }}>
+    <Stack spacing={1} sx={{ height: '100%', ...sx }} id={props.id}>
       {header}
       <Paper
         elevation={0}
@@ -174,13 +201,21 @@ export default function ChatBox(props: ChatBoxProps) {
         }}
       >
         <List sx={{ py: 0 }}>
-          {messages.length === 0 && !isProcessing && !error && (
-            <GreetingMessageComponent {...(slotProps.greetingMessage || {})} />
+          {messages.length === 0 && !isActive && !error && (
+            <GreetingMessageComponent
+              {...(slotProps.greetingMessage || {})}
+              id={props.id ? `${props.id}-greeting` : undefined}
+            />
           )}
           {messages.map((m: Message, index: number) => (
             <ChatMessageRenderer
               key={m.id || `message-${index}`} // Ensure key is always present
-              id={m.id || `message-item-${index}`} // Pass down an id for the renderer to use/propagate
+              id={
+                m.id ||
+                (props.id
+                  ? `${props.id}-message-${index}`
+                  : `message-item-${index}`)
+              }
               message={m}
               messageActions={messageActions}
               customRenderMessage={renderMessage} // Pass the custom renderer prop
@@ -193,9 +228,13 @@ export default function ChatBox(props: ChatBoxProps) {
           ))}
           <div ref={messagesEndRef} />
         </List>
-        {isProcessing && (
+        {showProcessingIndicator && (
           <BaseMessage
-            id='chatbox-processing-indicator'
+            id={
+              props.id
+                ? `${props.id}-processing-indicator`
+                : 'chatbox-processing-indicator'
+            }
             message={{
               id: 'processing-indicator',
               role: 'assistant',
@@ -221,7 +260,10 @@ export default function ChatBox(props: ChatBoxProps) {
           />
         )}
         {error && (
-          <ListItem sx={{ justifyContent: 'center', py: 1 }}>
+          <ListItem
+            sx={{ justifyContent: 'center', py: 1 }}
+            id={props.id ? `${props.id}-error-message` : undefined}
+          >
             <Box
               sx={{
                 p: 1,
@@ -242,7 +284,8 @@ export default function ChatBox(props: ChatBoxProps) {
         handleInputChange={handleInputChange}
         handleSubmit={handleSubmit}
         inputPlaceholder={inputPlaceholder}
-        isProcessing={isProcessing}
+        isProcessing={isActive}
+        onStopProcessing={handleStopProcessing}
         showFileSelector={showFileSelector}
         showVoiceInput={showVoiceInput}
         // Spread slotProps for the toolbar, allowing overrides of default/passed props
