@@ -48,7 +48,9 @@ export async function POST(req: NextRequest) {
     if (result.error) {
       // Log the error server-side for more details
       console.error(
-        `[EXECUTE-TOOL] Error executing tool for provider ${providerIdForExecution}: ${result.error}`
+        '[ExecuteTool:POST] ERROR: Error executing tool | ProviderID: %s, Error: %s',
+        providerIdForExecution,
+        result.error
       );
       // Send a generic or specific error back to client
       return NextResponse.json(
@@ -67,7 +69,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ result: result.output });
     }
   } catch (error: any) {
-    console.error('[EXECUTE-TOOL] Unexpected error in handler:', error);
+    console.error(
+      '[ExecuteTool:POST] ERROR: Unexpected error in handler | Error: %o',
+      error
+    );
     let errorMessage = 'An unexpected error occurred during tool execution.';
     if (error instanceof SyntaxError) {
       errorMessage = 'Invalid JSON in request body.';

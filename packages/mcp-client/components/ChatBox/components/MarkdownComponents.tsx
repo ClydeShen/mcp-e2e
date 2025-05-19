@@ -150,7 +150,6 @@ export const markdownComponents: Components = {
             bgcolor: theme.palette.action.hover,
             px: theme.spacing(0.5),
             py: theme.spacing(0.25),
-            borderRadius: theme.shape.borderRadius * 0.5,
           })}
           {...props}
         >

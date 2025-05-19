@@ -26,12 +26,15 @@ async function _executeStdioViaApi(
   const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3000'; // Fallback for safety, but ENV var is better
   if (!process.env.APP_BASE_URL) {
     console.warn(
-      '[mcp-tool-executor] APP_BASE_URL environment variable is not set. Defaulting to http://localhost:3000. This might not work in deployed environments.'
+      '[McpToolExecutor:_executeStdioViaApi] WARN: APP_BASE_URL environment variable not set. Defaulting to http://localhost:3000. This might not work in deployed environments.'
     );
   }
   const apiUrl = `${baseUrl}/api/mcp-stdio-handler`;
 
-  console.log(`[mcp-tool-executor] Calling STDIO handler via API: ${apiUrl}`); // Log the URL being called
+  console.log(
+    '[McpToolExecutor:_executeStdioViaApi] INFO: Calling STDIO handler via API | URL: %s',
+    apiUrl
+  );
 
   const stdioResponse = await fetch(apiUrl, {
     method: 'POST',
@@ -54,7 +57,8 @@ async function _executeStdioViaApi(
   }
   const stdioResult = await stdioResponse.json();
   console.log(
-    `[mcp-tool-executor] Result from STDIO handler for provider '${providerId}':`,
+    '[McpToolExecutor:_executeStdioViaApi] DEBUG: Result from STDIO handler | Provider: %s, Result: %o',
+    providerId,
     stdioResult
   );
 
@@ -64,8 +68,11 @@ async function _executeStdioViaApi(
   // If there was stderr output but exit code was 0, it might be just logs/warnings.
   // We could choose to log stdioResult.stderr here if exitCode is 0 and stderr is not empty.
   if (stdioResult.exitCode === 0 && stdioResult.stderr) {
-    console.log(`[mcp-tool-executor] STDIO provider '${providerId}' wrote to stderr (exit code 0):
-${stdioResult.stderr}`);
+    console.log(
+      '[McpToolExecutor:_executeStdioViaApi] INFO: STDIO provider wrote to stderr (exit code 0) | Provider: %s, Stderr: %s',
+      providerId,
+      stdioResult.stderr
+    );
   }
 
   return {
@@ -120,7 +127,9 @@ async function _executeSse(
     eventSource.onerror = (error) => {
       eventSource.close();
       console.error(
-        `[mcp-tool-executor] SSE error for ${providerId} at ${sseConfig.url}:`,
+        '[McpToolExecutor:_executeSse] ERROR: SSE connection error | Provider: %s, URL: %s, Error: %o',
+        providerId,
+        sseConfig.url,
         error
       );
       resolve({
@@ -153,7 +162,9 @@ async function _executeWebSocket(
     socket.onerror = (error) => {
       socket.close();
       console.error(
-        `[mcp-tool-executor] WebSocket error for ${providerId} at ${wsConfig.url}:`,
+        '[McpToolExecutor:_executeWebSocket] ERROR: WebSocket connection error | Provider: %s, URL: %s, Error: %o',
+        providerId,
+        wsConfig.url,
         error
       );
       resolve({
@@ -165,7 +176,9 @@ async function _executeWebSocket(
     socket.onclose = (event) => {
       if (!event.wasClean) {
         console.warn(
-          `[mcp-tool-executor] WebSocket for ${providerId} closed uncleanly.`
+          '[McpToolExecutor:_executeWebSocket] WARN: WebSocket closed uncleanly | Provider: %s, Event: %o',
+          providerId,
+          event
         );
         // Avoid resolving if already resolved by onmessage or onerror
         // Consider if an error should be resolved here if not already.
@@ -226,8 +239,10 @@ export async function executeMcpTool(
     }
   } catch (err: any) {
     console.error(
-      `[mcp-tool-executor] Unexpected error executing tool for ${currentProviderId}:`,
-      err
+      '[McpToolExecutor:executeMcpTool] ERROR: Unexpected error executing tool | Provider: %s, Error: %s',
+      currentProviderId,
+      err.message,
+      err // include full error object for more details if needed
     );
     return {
       error: `Unexpected error executing tool for ${currentProviderId}: ${err.message}`,

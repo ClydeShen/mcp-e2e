@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev:client": "pnpm --filter \"@mcp-e2e/mcp-client\" dev"
+    "dev:client": "pnpm --filter \"@mcp-e2e/mcp-client\" dev",
+    "build:client": "pnpm --filter \"@mcp-e2e/mcp-client\" build",
+    "start:client": "pnpm --filter \"@mcp-e2e/mcp-client\" start",
+    "lint:client": "pnpm --filter \"@mcp-e2e/mcp-client\" lint"
   },
   "keywords": [],
   "author": "",

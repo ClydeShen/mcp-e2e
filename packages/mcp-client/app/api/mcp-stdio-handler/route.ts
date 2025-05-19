@@ -18,9 +18,9 @@ interface SpawnResult {
 
 // Helper function to spawn process and get response
 async function _spawnAndGetResponse(
-  stdioProvider: McpStdioProvider,
+  stdioProvider: McpStdioProvider, // Type is already specific
   inputData: string,
-  providerId: string // Added providerId for logging consistency
+  providerId: string
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
     const commandExecutable = stdioProvider.command;
@@ -32,7 +32,7 @@ async function _spawnAndGetResponse(
       {
         cwd: stdioProvider.cwd || process.cwd(),
         env: { ...process.env, ...stdioProvider.env },
-        stdio: ['pipe', 'pipe', 'pipe'], // Ensure stdio options are correctly typed for ChildProcessWithoutNullStreams
+        stdio: ['pipe', 'pipe', 'pipe'],
       }
     );
 
@@ -40,18 +40,28 @@ async function _spawnAndGetResponse(
     let stderrData = '';
 
     child.stdout.on('data', (data: Buffer) => {
-      console.log('[MCP-STDIO-HANDLER] Raw STDOUT Data Chunk (Buffer):', data);
-      console.log(
-        '[MCP-STDIO-HANDLER] Raw STDOUT Data Chunk (String):',
+      console.debug(
+        '[McpStdioHandler:_spawnAndGetResponse] DEBUG: Raw STDOUT Data Chunk (Buffer) | ProviderID: %s, Chunk: %o',
+        providerId,
+        data
+      );
+      console.debug(
+        '[McpStdioHandler:_spawnAndGetResponse] DEBUG: Raw STDOUT Data Chunk (String) | ProviderID: %s, Chunk: %s',
+        providerId,
         data.toString()
       );
       stdoutData += data.toString();
     });
 
     child.stderr.on('data', (data: Buffer) => {
-      console.log('[MCP-STDIO-HANDLER] Raw STDERR Data Chunk (Buffer):', data);
-      console.log(
-        '[MCP-STDIO-HANDLER] Raw STDERR Data Chunk (String):',
+      console.debug(
+        '[McpStdioHandler:_spawnAndGetResponse] DEBUG: Raw STDERR Data Chunk (Buffer) | ProviderID: %s, Chunk: %o',
+        providerId,
+        data
+      );
+      console.debug(
+        '[McpStdioHandler:_spawnAndGetResponse] DEBUG: Raw STDERR Data Chunk (String) | ProviderID: %s, Chunk: %s',
+        providerId,
         data.toString()
       );
       stderrData += data.toString();
@@ -59,29 +69,34 @@ async function _spawnAndGetResponse(
 
     child.on('error', (error) => {
       console.error(
-        `[MCP-STDIO-HANDLER] Failed to start process for "${providerId}":`,
+        '[McpStdioHandler:_spawnAndGetResponse] ERROR: Failed to start process | ProviderID: %s, Error: %o',
+        providerId,
         error
       );
-      // Resolve with error information, but let the main handler decide the HTTP response
       resolve({
         stdout: stdoutData,
         stderr: `Failed to start STDIO process: ${error.message}`,
-        exitCode: null, // Or a specific error code if applicable
+        exitCode: null,
       });
     });
 
     child.on('close', (code) => {
-      console.log(
-        `[MCP-STDIO-HANDLER] Child process for "${providerId}" closed with code ${code}.`
+      console.info(
+        '[McpStdioHandler:_spawnAndGetResponse] INFO: Child process closed | ProviderID: %s, Code: %s',
+        providerId,
+        code
       );
-      console.log(
-        `[MCP-STDIO-HANDLER] STDOUT for "${providerId}":\n${stdoutData}`
+      console.debug(
+        '[McpStdioHandler:_spawnAndGetResponse] DEBUG: STDOUT on close | ProviderID: %s, STDOUT: %s',
+        providerId,
+        stdoutData
       );
-      console.log(
-        `[MCP-STDIO-HANDLER] STDERR for "${providerId}":\n${stderrData}`
+      console.debug(
+        '[McpStdioHandler:_spawnAndGetResponse] DEBUG: STDERR on close | ProviderID: %s, STDERR: %s',
+        providerId,
+        stderrData
       );
       if (code !== 0 && stderrData === '') {
-        // check if stderrData is empty string
         stderrData = `STDIO process for "${providerId}" exited with code ${code}`;
       }
       resolve({
@@ -91,8 +106,10 @@ async function _spawnAndGetResponse(
       });
     });
 
-    console.log(
-      `[MCP-STDIO-HANDLER] Writing to STDIN for "${providerId}":\n${inputData}`
+    console.debug(
+      '[McpStdioHandler:_spawnAndGetResponse] DEBUG: Writing to STDIN | ProviderID: %s, InputData: %s',
+      providerId,
+      inputData
     );
     if (inputData) {
       child.stdin.write(inputData + '\n');
@@ -122,66 +139,46 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Determine effectiveType for the provider, similar to chat-handler
-    let effectiveType = provider.type;
-    if (
-      !effectiveType &&
-      'command' in provider &&
-      typeof provider.command === 'string'
-    ) {
-      effectiveType = 'stdio';
-    }
-
-    if (effectiveType !== 'stdio') {
+    // Directly use provider.type as it's validated by getMcpConfig
+    if (provider.type !== 'stdio') {
       return NextResponse.json(
         {
           error: `Provider "${providerId}" is not a configured STDIO provider (type is '${
-            effectiveType || 'undefined'
+            provider.type || 'undefined' // provider.type will always exist here
           }').`,
         },
         { status: 400 }
       );
     }
 
-    // Now we can safely cast to McpStdioProvider
+    // Now we can safely cast to McpStdioProvider (though it's already narrowed by the check above)
     const stdioProvider = provider as McpStdioProvider;
 
-    // The command presence is already implicitly checked by the effectiveType logic for stdio,
-    // but an explicit check on stdioProvider.command (which should exist if type is stdio)
-    // isn't harmful, though might be redundant if types are strict.
-    // Given McpStdioProvider type mandates command, this specific check might be less critical here
-    // if effectiveType derivation is robust.
-    // For now, let's rely on the effectiveType === 'stdio' implying command exists as per McpStdioProvider type.
-
-    // Call the helper function
     const result = await _spawnAndGetResponse(
       stdioProvider,
       inputData,
       providerId
     );
 
-    // Determine response based on helper function's result
     if (result.stderr && result.exitCode !== 0 && result.exitCode !== null) {
-      // Added null check for exitCode
-      // If there was an error starting the process (indicated by specific stderr from _spawnAndGetResponse error handler)
-      // or if the process exited with an error code.
-      // Note: _spawnAndGetResponse's 'error' event already logs to console.
       return NextResponse.json(
         {
           stdout: result.stdout,
           stderr: result.stderr,
           exitCode: result.exitCode,
         },
-        // Optionally, decide status based on exitCode or specific stderr messages
         result.stderr.startsWith('Failed to start STDIO process:')
           ? { status: 500 }
-          : { status: 200 } // Or 400/500 based on error type
+          : { status: 200 }
       );
     }
 
-    return NextResponse.json(result); // This will send { stdout, stderr, exitCode }
+    return NextResponse.json(result);
   } catch (error: any) {
-    console.error('[MCP-STDIO-HANDLER] Error:', error);
+    console.error(
+      '[McpStdioHandler:POST] ERROR: Handler error | Error: %o',
+      error
+    );
     let errorMessage = 'An unexpected error occurred.';
     if (error instanceof SyntaxError) {
       errorMessage = 'Invalid JSON in request body.';

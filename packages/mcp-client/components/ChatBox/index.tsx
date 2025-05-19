@@ -58,7 +58,11 @@ export default function ChatBox(props: ChatBoxProps) {
     initialInput,
     onFinish,
     onError: (e: Error) => {
-      console.error('[ChatBox:useChat] Chat error:', e.message, e);
+      console.error(
+        '[ChatBox:useChat] ERROR: Chat error | Message: %s, Error: %o',
+        e.message,
+        e
+      );
       if (onError) {
         onError(e);
       }
@@ -80,7 +84,9 @@ export default function ChatBox(props: ChatBoxProps) {
 
         try {
           console.log(
-            `[ChatBox] Executing tool: ${toolName} for provider: ${providerId} with payload:`,
+            '[ChatBox:onToolCall] INFO: Executing filesystem tool | ToolName: %s, ProviderID: %s, Payload: %o',
+            toolName,
+            providerId,
             stdioServerPayload
           );
           const response = await fetch('/api/execute-tool', {
@@ -97,9 +103,9 @@ export default function ChatBox(props: ChatBoxProps) {
               .json()
               .catch(() => ({ error: response.statusText }));
             console.error(
-              `[ChatBox] Error from /api/execute-tool for ${toolName}: ${
-                errorData.error || response.statusText
-              }`
+              '[ChatBox:onToolCall] ERROR: API error for filesystem tool | ToolName: %s, Error: %s',
+              toolName,
+              errorData.error || response.statusText
             );
             throw new Error(
               `Tool execution via API failed for ${toolName}: ${
@@ -110,13 +116,15 @@ export default function ChatBox(props: ChatBoxProps) {
 
           const responseData = await response.json();
           console.log(
-            `[ChatBox] Result from /api/execute-tool for ${toolName}:`,
+            '[ChatBox:onToolCall] DEBUG: Result from API for filesystem tool | ToolName: %s, Result: %o',
+            toolName,
             responseData.result
           );
           return responseData.result; // The AI SDK expects the direct result here
         } catch (e: any) {
           console.error(
-            `[ChatBox] Failed to execute tool ${toolName} via /api/execute-tool:`,
+            '[ChatBox:onToolCall] ERROR: Failed to execute filesystem tool via API | ToolName: %s, Error: %o',
+            toolName,
             e
           );
           // Let the error propagate to useChat's onError or throw it
@@ -128,7 +136,9 @@ export default function ChatBox(props: ChatBoxProps) {
       } else {
         // Fallback for other tools (e.g., aws-documentation) or if a tool isn't handled above
         console.warn(
-          `[ChatBox] Simulating tool call for unhandled tool: ${toolName}`
+          '[ChatBox:onToolCall] WARN: Simulating tool call for unhandled tool | ToolName: %s, Args: %o',
+          toolName,
+          args
         );
         const minimalResultString = `Tool ${toolName} called (simulated). Args: ${JSON.stringify(
           args
@@ -147,7 +157,9 @@ export default function ChatBox(props: ChatBoxProps) {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort(); // Abort any ongoing fetch in onToolCall
     }
-    console.log('[ChatBox:Toolbar] Stop processing initiated.');
+    console.log(
+      '[ChatBox:handleStopProcessing] INFO: Stop processing initiated.'
+    );
   };
 
   const messagesEndRef = React.useRef<null | HTMLDivElement>(null);
@@ -159,14 +171,17 @@ export default function ChatBox(props: ChatBoxProps) {
   const handleRegenerateResponse = (messageId: string) => {
     const messageIndex = messages.findIndex((msg) => msg.id === messageId);
     if (messageIndex === -1) {
-      console.error('[ChatBox] Message to regenerate not found:', messageId);
+      console.error(
+        '[ChatBox:handleRegenerateResponse] ERROR: Message to regenerate not found | MessageID: %s',
+        messageId
+      );
       return;
     }
 
     const targetMessage = messages[messageIndex];
     if (targetMessage.role !== 'user') {
       console.warn(
-        '[ChatBox] Attempted to regenerate response for a non-user message:',
+        '[ChatBox:handleRegenerateResponse] WARN: Attempted to regenerate response for a non-user message | MessageID: %s',
         messageId
       );
       return;
@@ -176,7 +191,7 @@ export default function ChatBox(props: ChatBoxProps) {
     const historyToReload = messages.slice(0, messageIndex + 1);
 
     console.log(
-      '[ChatBox] Regenerating response for user message. Setting history then reloading:',
+      '[ChatBox:handleRegenerateResponse] INFO: Regenerating response for user message | History: %o',
       historyToReload
     );
     // Set the messages to the history up to the point of the user message,
@@ -280,7 +295,7 @@ export default function ChatBox(props: ChatBoxProps) {
             renderContent={() => <CircularProgress size={20} />}
             bubbleSx={{
               p: 1.5, // Padding inside the bubble
-              borderRadius: 2,
+
               bgcolor: 'grey.100',
               color: 'text.primary',
               boxShadow: '0 2px 5px rgba(0,0,0,0.1)',

@@ -261,7 +261,7 @@ export function getMcpConfig(): AppConfig {
     return loadedConfig;
   } catch (error: any) {
     console.error(
-      '[ERROR] Failed to load or parse mcp.config.json:',
+      '[McpClientConfig:getMcpConfig] ERROR: Failed to load or parse mcp.config.json | Message: %s',
       error.message
     );
     throw new Error(

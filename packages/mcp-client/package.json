@@ -18,6 +18,7 @@
     "@aws-sdk/client-bedrock-agent-runtime": "^3.812.0",
     "@aws-sdk/client-bedrock-runtime": "^3.812.0",
     "@aws-sdk/credential-providers": "^3.812.0",
+    "@emotion/cache": "^11.14.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
     "@langchain/aws": "^0.1.10",

@@ -1,7 +1,7 @@
 'use client';
 
 import { TextUIPart, ToolInvocationUIPart } from '@ai-sdk/ui-utils';
-import { Box, IconButton, ListItem, Typography } from '@mui/material'; // For combined text/tool messages
+import { Box } from '@mui/material'; // For combined text/tool messages
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -9,6 +9,10 @@ import type { Message, MessageAction, MessageRenderProps } from '../types';
 import BotMessage from './BotMessage';
 import BotTool from './BotTool';
 import { markdownComponents } from './MarkdownComponents'; // ADDED: Import shared components
+import MessageActions from './MessageActions'; // Import MessageActions
+import MessageAvatar from './MessageAvatar'; // Import for avatar
+import MessageContainer from './MessageContainer'; // Import for structure
+import MessageContentBubble from './MessageContentBubble'; // Import the new component
 import UserMessage from './UserMessage';
 
 // Import prop types for more specific slotProps typing
@@ -18,6 +22,20 @@ import type { UserMessageProps } from './UserMessage';
 
 // Import the shared default avatar components
 import { DefaultBotAvatar, DefaultUserAvatar } from './DefaultAvatars';
+
+import type { SxProps, Theme } from '@mui/material/styles'; // Ensure Theme and SxProps are imported
+
+// Helper function to generate unique IDs for sub-components
+const generateSubComponentId = (
+  parentId?: string,
+  prefix?: string,
+  uniquePart?: string | number
+): string | undefined => {
+  if (!parentId && !prefix) return undefined;
+  const base = parentId ? `${parentId}-` : '';
+  const actualPrefix = prefix ? `${prefix}-` : '';
+  return `${base}${actualPrefix}${uniquePart || 'item'}`;
+};
 
 // Define slot types specifically for ChatMessageRenderer
 interface MessageRendererSlots {
@@ -30,7 +48,9 @@ interface MessageRendererSlots {
 
 interface MessageRendererSlotProps {
   userMessage?: Partial<UserMessageProps>;
-  botMessage?: Partial<BotMessageProps>;
+  botMessage?: Partial<
+    Omit<BotMessageProps, 'contentSx'> & { bubbleSx?: SxProps<Theme> }
+  >;
   botTool?: Partial<BotToolProps>;
   userMessageAvatar?: object;
   botMessageAvatar?: object;
@@ -82,6 +102,8 @@ const ChatMessageRenderer: React.FC<ChatMessageRendererProps> = ({
         messageActions={messageActions}
         avatar={UserAvatarToRender || undefined}
         avatarProps={slotProps.userMessageAvatar}
+        sx={slotProps.userMessage?.sx}
+        bubbleSx={slotProps.userMessage?.bubbleSx}
         {...(slotProps.userMessage || {})}
         onRegenerate={onRegenerate}
       />
@@ -89,63 +111,69 @@ const ChatMessageRenderer: React.FC<ChatMessageRendererProps> = ({
   }
 
   if (message.role === 'assistant') {
-    const renderMessageActions = () => {
-      // Only render actions if messageActions are provided and the message is not just a tool call placeholder
-      if (!messageActions || messageActions.length === 0) return null;
-      // Filter out actions that might not be suitable for the entire block if needed, or pass all.
-      // Example: regenerate might be for the whole assistant turn.
-
-      return (
-        <Box
-          sx={{
-            mt: 0.5,
-            display: 'flex',
-            gap: 0.5,
-            justifyContent: 'flex-start',
-          }}
-        >
-          {messageActions.map((action) => (
-            <IconButton
-              key={action.type}
-              size='small'
-              onClick={() => action.handler(message)} // handler gets the whole message object
-              title={action.label}
-              sx={{
-                border: '1px solid',
-                borderColor: 'divider',
-                bgcolor: 'background.paper',
-                '&:hover': { bgcolor: 'action.hover' },
-              }}
-            >
-              {action.icon || (
-                <Typography variant='caption'>{action.label}</Typography>
-              )}
-            </IconButton>
-          ))}
-        </Box>
-      );
-    };
-
     if (message.parts && message.parts.length > 0) {
       const assistantMessageParts = message.parts
         .map((part, index) => {
           if (part.type === 'text') {
             const textPart = part as TextUIPart;
+
+            const baseTextBubbleStylesFn = (theme: Theme) => ({
+              bgcolor: theme.palette.grey[100],
+              color: theme.palette.text.primary,
+              mb: 1,
+              alignSelf: 'flex-start',
+              maxWidth: '100%',
+            });
+
+            let finalBubbleSx: SxProps<Theme>;
+            const slotBubbleSx = slotProps.botMessage?.bubbleSx;
+
+            if (!slotBubbleSx) {
+              finalBubbleSx = baseTextBubbleStylesFn;
+            } else {
+              const stylesArray: Array<
+                Exclude<
+                  SxProps<Theme>,
+                  ReadonlyArray<any> | boolean | null | undefined
+                >
+              > = [baseTextBubbleStylesFn];
+              if (Array.isArray(slotBubbleSx)) {
+                slotBubbleSx.forEach((item) => {
+                  if (
+                    item &&
+                    (typeof item === 'object' || typeof item === 'function')
+                  ) {
+                    stylesArray.push(
+                      item as Exclude<
+                        SxProps<Theme>,
+                        ReadonlyArray<any> | boolean | null | undefined
+                      >
+                    );
+                  }
+                });
+              } else {
+                // slotBubbleSx is an object or function
+                if (
+                  slotBubbleSx &&
+                  (typeof slotBubbleSx === 'object' ||
+                    typeof slotBubbleSx === 'function')
+                ) {
+                  stylesArray.push(
+                    slotBubbleSx as Exclude<
+                      SxProps<Theme>,
+                      ReadonlyArray<any> | boolean | null | undefined
+                    >
+                  );
+                }
+              }
+              finalBubbleSx = stylesArray;
+            }
+
             return (
-              <Box
+              <MessageContentBubble
                 key={`${message.id}-text-${index}`}
-                sx={{
-                  p: 1.5,
-                  borderRadius: 2,
-                  bgcolor: 'grey.100',
-                  color: 'text.primary',
-                  boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
-                  mb: 1, // Margin between parts
-                  display: 'inline-block',
-                  alignSelf: 'flex-start',
-                  maxWidth: '80%',
-                  ...(slotProps.botMessage?.contentSx || {}),
-                }}
+                id={generateSubComponentId(id, 'text-bubble', index)}
+                sx={finalBubbleSx}
               >
                 <ReactMarkdown
                   components={markdownComponents}
@@ -153,27 +181,35 @@ const ChatMessageRenderer: React.FC<ChatMessageRendererProps> = ({
                 >
                   {textPart.text}
                 </ReactMarkdown>
-              </Box>
+              </MessageContentBubble>
             );
           } else if (part.type === 'tool-invocation') {
             const toolPart = part as ToolInvocationUIPart;
+            // For tool invocation, we directly apply a simpler style or could use a similar merge if needed.
+            const toolBubbleSx = (theme: Theme) => ({
+              bgcolor: theme.palette.grey[50], // Slightly different bg for tools
+              color: theme.palette.text.primary,
+              mb: 1,
+              alignSelf: 'flex-start',
+              maxWidth: '100%',
+              p: 1,
+            });
             return (
-              <BotToolComponent
-                id={
-                  id
-                    ? `${id}-tool-${
-                        toolPart.toolInvocation.toolCallId || index
-                      }`
-                    : `tool-${toolPart.toolInvocation.toolCallId || index}`
-                }
-                key={`${message.id}-tool-${
-                  toolPart.toolInvocation.toolCallId || index
-                }`}
-                toolInvocation={toolPart.toolInvocation}
-                {...(slotProps.botTool || {})}
-                // Apply sx from slotProps.botTool if provided, e.g. slotProps.botTool.sx
-                sx={{ mb: 1, ...(slotProps.botTool?.sx || {}) }} // Ensure margin between parts
-              />
+              <MessageContentBubble
+                key={`${message.id}-tool-${index}`}
+                id={generateSubComponentId(id, 'tool-bubble', index)}
+                sx={toolBubbleSx}
+              >
+                <BotToolComponent
+                  id={generateSubComponentId(
+                    id,
+                    'tool',
+                    toolPart.toolInvocation.toolCallId || index
+                  )}
+                  toolInvocation={toolPart.toolInvocation}
+                  {...(slotProps.botTool || {})}
+                />
+              </MessageContentBubble>
             );
           }
           return null;
@@ -190,6 +226,8 @@ const ChatMessageRenderer: React.FC<ChatMessageRendererProps> = ({
             messageActions={messageActions}
             avatar={BotAvatarToRender || undefined}
             avatarProps={slotProps.botMessageAvatar}
+            sx={slotProps.botMessage?.sx}
+            bubbleSx={slotProps.botMessage?.bubbleSx}
             {...(slotProps.botMessage || {})}
           />
         );
@@ -197,38 +235,44 @@ const ChatMessageRenderer: React.FC<ChatMessageRendererProps> = ({
 
       // Only render the ListItem wrapper if there are parts to display
       if (assistantMessageParts.length > 0) {
-        return (
-          <ListItem
-            id={id}
+        const avatarNode = BotAvatarToRender && (
+          <MessageAvatar
+            AvatarComponent={BotAvatarToRender}
+            avatarProps={slotProps.botMessageAvatar || {}}
+          />
+        );
+
+        const contentAreaForParts = (
+          <Box
             sx={{
               display: 'flex',
-              flexDirection: 'row',
+              flexDirection: 'column',
               alignItems: 'flex-start',
-              justifyContent: 'flex-start',
-              mb: 1.5,
-              px: 0.5,
-              gap: 1,
-              width: '100%',
-              ...(slotProps.botMessage?.sx || {}),
+              flexGrow: 1,
+              width: '100%', // Ensure it takes available width
             }}
           >
-            {BotAvatarToRender && (
-              <Box sx={{ flexShrink: 0, mt: 0.5 }}>
-                <BotAvatarToRender {...(slotProps.botMessageAvatar || {})} />
-              </Box>
-            )}
-            <Box
-              sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                flexGrow: 1,
-              }}
-            >
-              {assistantMessageParts}
-              {renderMessageActions()}
-            </Box>
-          </ListItem>
+            {assistantMessageParts}
+            <MessageActions
+              actions={messageActions || []}
+              message={message}
+              justifyContent='flex-start'
+            />
+          </Box>
+        );
+
+        return (
+          <MessageContainer
+            id={id}
+            sx={{
+              width: '100%', // Ensure the container takes full width
+              ...(slotProps.botMessage?.sx || {}),
+            }}
+            avatarSide='left' // Bot messages are typically left-aligned
+            avatar={avatarNode}
+            contentArea={contentAreaForParts}
+            // onHoverChange and hoverAccessory could be added if needed for the whole block
+          />
         );
       }
       // If parts array was present but yielded no renderable content (e.g. all unknown part types)
@@ -243,6 +287,8 @@ const ChatMessageRenderer: React.FC<ChatMessageRendererProps> = ({
           messageActions={messageActions}
           avatar={BotAvatarToRender || undefined}
           avatarProps={slotProps.botMessageAvatar}
+          sx={slotProps.botMessage?.sx}
+          bubbleSx={slotProps.botMessage?.bubbleSx}
           {...(slotProps.botMessage || {})}
         />
       );

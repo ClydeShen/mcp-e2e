@@ -1,4 +1,5 @@
 import { TextUIPart } from '@ai-sdk/ui-utils';
+import type { SxProps, Theme } from '@mui/material/styles';
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -10,7 +11,7 @@ import { markdownComponents } from './MarkdownComponents'; // Import shared comp
 // They are now centralized in MarkdownComponents.tsx
 
 // Helper function to render bot message content with Markdown support
-const renderBotMessageContent = (msg: Message) => {
+const renderBotMessageContent = (msg: Message): React.ReactNode => {
   let contentToDisplay: React.ReactNode;
 
   if (msg.parts && msg.parts.length > 0) {
@@ -54,7 +55,7 @@ export interface BotMessageProps {
   message: Message;
   messageActions?: MessageAction[];
   sx?: BaseMessageProps['sx'];
-  contentSx?: object;
+  bubbleSx?: SxProps<Theme>;
   avatar?: React.ElementType;
   avatarProps?: object;
 }
@@ -64,10 +65,52 @@ const BotMessage: React.FC<BotMessageProps> = ({
   message,
   messageActions,
   sx,
-  contentSx,
+  bubbleSx: incomingBubbleSx,
   avatar,
   avatarProps,
 }) => {
+  const defaultBotStylesFunction = (theme: Theme) => ({
+    bgcolor: theme.palette.grey[100],
+    color: theme.palette.text.primary,
+  });
+
+  let finalBubbleSxForBase: SxProps<Theme>;
+
+  if (!incomingBubbleSx) {
+    finalBubbleSxForBase = defaultBotStylesFunction;
+  } else {
+    const sxElementArray: Array<
+      Exclude<SxProps<Theme>, ReadonlyArray<any> | boolean | null | undefined>
+    > = [defaultBotStylesFunction];
+
+    if (Array.isArray(incomingBubbleSx)) {
+      incomingBubbleSx.forEach((item) => {
+        if (item && (typeof item === 'object' || typeof item === 'function')) {
+          sxElementArray.push(
+            item as Exclude<
+              SxProps<Theme>,
+              ReadonlyArray<any> | boolean | null | undefined
+            >
+          );
+        }
+      });
+    } else {
+      if (
+        incomingBubbleSx &&
+        (typeof incomingBubbleSx === 'object' ||
+          typeof incomingBubbleSx === 'function')
+      ) {
+        sxElementArray.push(
+          incomingBubbleSx as Exclude<
+            SxProps<Theme>,
+            ReadonlyArray<any> | boolean | null | undefined
+          >
+        );
+      }
+    }
+    finalBubbleSxForBase = sxElementArray;
+  }
+
   return (
     <BaseMessage
       id={id}
@@ -77,11 +120,7 @@ const BotMessage: React.FC<BotMessageProps> = ({
       avatarProps={avatarProps}
       avatarSide='left'
       sx={sx}
-      bubbleSx={(theme) => ({
-        bgcolor: theme.palette.grey[100],
-        color: 'text.primary',
-        ...contentSx,
-      })}
+      bubbleSx={finalBubbleSxForBase}
       renderContent={renderBotMessageContent}
     />
   );

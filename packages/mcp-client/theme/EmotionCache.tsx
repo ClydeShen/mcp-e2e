@@ -1,8 +1,11 @@
 'use client';
 
-import * as React from 'react';
-import createCache, { EmotionCache, Options as OptionsOfCreateCache } from '@emotion/cache';
+import createCache, {
+  EmotionCache,
+  Options as OptionsOfCreateCache,
+} from '@emotion/cache';
 import { useServerInsertedHTML } from 'next/navigation';
+import * as React from 'react';
 
 export type NextAppDirEmotionCacheProviderProps = {
   /** This is the options passed to createCache() from '@emotion/cache'. */
@@ -17,7 +20,9 @@ export type NextAppDirEmotionCacheProviderProps = {
 
 // This implementation is taken directly from Material UI documentation
 // https://mui.com/material-ui/guides/nextjs-app-router/
-export default function NextAppDirEmotionCacheProvider(props: NextAppDirEmotionCacheProviderProps) {
+export default function NextAppDirEmotionCacheProvider(
+  props: NextAppDirEmotionCacheProviderProps
+) {
   const { options, CacheProvider, children } = props;
 
   const [registry] = React.useState(() => {
@@ -58,9 +63,9 @@ export default function NextAppDirEmotionCacheProvider(props: NextAppDirEmotionC
 
       if (typeof style !== 'boolean') {
         if (isGlobal) {
-          globals.push({ name, style });
+          globals.push({ name, style: style || '' });
         } else {
-          styles += style;
+          styles += style || '';
           dataEmotionAttribute += ` ${name}`;
         }
       }

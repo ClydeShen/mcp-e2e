@@ -45,6 +45,7 @@ async function _validateChatRequest(req: NextRequest): Promise<{
         ),
       };
     }
+    // Commented out: Last message user check - consider if this business rule is still needed.
     // const currentMessage = messages[messages.length - 1];
     // if (currentMessage.role !== 'user') {
     //   return {
@@ -57,7 +58,10 @@ async function _validateChatRequest(req: NextRequest): Promise<{
     return { messages };
   } catch (error) {
     // Handle JSON parsing errors or other unexpected errors during request validation
-    console.error('[CHAT-HANDLER] Error validating request:', error);
+    console.error(
+      '[ChatHandler:_validateChatRequest] ERROR: Invalid request body | Error: %o',
+      error
+    );
     return {
       errorResponse: NextResponse.json(
         { error: 'Invalid request body' },
@@ -74,7 +78,9 @@ function _getValidatedLLMConfig(): {
 } {
   const llmConfig = getLLMConfig();
   if (!llmConfig || !llmConfig.model) {
-    console.error('[CHAT-HANDLER] LLM model not configured.');
+    console.error(
+      '[ChatHandler:_getValidatedLLMConfig] ERROR: LLM model not configured.'
+    );
     return {
       errorResponse: NextResponse.json(
         { error: 'LLM model not configured' },
@@ -89,7 +95,7 @@ function _getValidatedLLMConfig(): {
     llmConfig.maxSteps !== undefined
   ) {
     console.warn(
-      '[CHAT-HANDLER] llmConfig.maxSteps is not a number, defaulting behavior may occur in streamText.'
+      '[ChatHandler:_getValidatedLLMConfig] WARN: llmConfig.maxSteps is not a number, defaulting behavior may occur in streamText.'
     );
   }
   return { llmConfig };
@@ -153,28 +159,14 @@ async function _initializeMcpClientAndTools(
 }> {
   let transport;
 
-  // Determine effectiveType more safely
-  let effectiveType = providerConfig.type;
-  if (!effectiveType && 'command' in providerConfig && providerConfig.command) {
-    effectiveType = 'stdio';
-  }
-
-  switch (effectiveType) {
+  // Directly use providerConfig.type as it's already derived and validated by getMcpConfig
+  switch (providerConfig.type) {
     case 'stdio':
-      // Now that effectiveType is 'stdio', providerConfig should be compatible with McpStdioProvider
-      // However, explicit check or safer cast might still be good.
-      const stdioConfig = providerConfig as McpStdioProvider; // This cast should be safer now
-
-      // Ensure command is truly present; this check might be redundant if above logic is perfect
-      // but good for robustness if McpStdioProvider definition allows optional command.
-      if (!('command' in stdioConfig && stdioConfig.command)) {
-        console.error(
-          `[CHAT-HANDLER] STDIN provider '${providerId}' (type: ${effectiveType}) is missing a valid 'command'. Skipping MCP client init for this provider.`
-        );
-        return {};
-      }
+      // Cast to McpStdioProvider is safe here due to the switch case
+      const stdioConfig = providerConfig as McpStdioProvider;
+      // The 'command' field is guaranteed by McpStdioProvider type
       transport = new StdioMCPTransport({
-        command: stdioConfig.command, // Should be safe now
+        command: stdioConfig.command,
         args: stdioConfig.args,
         env: stdioConfig.env,
       });
@@ -194,27 +186,30 @@ async function _initializeMcpClientAndTools(
     //   });
     //   break;
     default:
-      console.log(
-        `[CHAT-HANDLER] Provider type '${
-          effectiveType // Use effectiveType for logging
-        }' for '${providerId}' is not an auto-discoverable tool server type (currently only STDIN is supported for MCP client). Skipping MCP client init for this provider.`
+      console.warn(
+        '[ChatHandler:_initializeMcpClientAndTools] WARN: Unsupported provider type for auto-discovery | ProviderID: %s, Type: %s',
+        providerId,
+        providerConfig.type // Log the actual type from the config
       );
-      return {};
+      return {}; // Skip MCP client init for non-STDIO or unhandled types
   }
 
   let mcpClient: InferredMCPClient | undefined;
   try {
     mcpClient = await createMCPClient({ transport });
     const discoveredMcpTools: Record<string, Tool> = await mcpClient.tools();
-    // Keep this log as it's informative for setup verification
-    console.log(
-      `[CHAT-HANDLER] Discovered MCP Tools for '${providerId}' (type: ${effectiveType}):`,
+    console.info(
+      '[ChatHandler:_initializeMcpClientAndTools] INFO: Discovered MCP Tools | ProviderID: %s, Type: %s, Tools: %o',
+      providerId,
+      providerConfig.type,
       Object.keys(discoveredMcpTools)
     );
     return { mcpClient, discoveredMcpTools };
   } catch (err: any) {
     console.error(
-      `[CHAT-HANDLER] Error initializing MCP client for '${providerId}' (type: ${providerConfig.type}):`,
+      '[ChatHandler:_initializeMcpClientAndTools] ERROR: Error initializing MCP client | ProviderID: %s, Type: %s, Error: %o',
+      providerId,
+      providerConfig.type,
       err
     );
     if (mcpClient) {
@@ -222,7 +217,9 @@ async function _initializeMcpClientAndTools(
         .close()
         .catch((closeError: Error) =>
           console.error(
-            `[CHAT-HANDLER] Error closing MCP client for '${providerId}' (type: ${providerConfig.type}) during init error:`,
+            '[ChatHandler:_initializeMcpClientAndTools] ERROR: Error closing MCP client during init error | ProviderID: %s, Type: %s, Error: %o',
+            providerId,
+            providerConfig.type,
             closeError
           )
         );
@@ -242,7 +239,7 @@ async function _initializeMcpClientAndTools(
 }
 
 // Error handler function as suggested by AI SDK documentation
-export function vercelAiErrorHandler(error: unknown): string {
+function vercelAiErrorHandler(error: unknown): string {
   if (error == null) {
     return 'Unknown error';
   }
@@ -252,14 +249,14 @@ export function vercelAiErrorHandler(error: unknown): string {
   if (error instanceof Error) {
     // Log the full error on the server for more details
     console.error(
-      '[CHAT-HANDLER] Detailed error from streamText via vercelAiErrorHandler:',
+      '[ChatHandler:vercelAiErrorHandler] ERROR: Detailed error from streamText | Error: %o',
       error
     );
     return error.message; // Send only the message to the client
   }
   // Log the full error object if it's not an Error instance
   console.error(
-    '[CHAT-HANDLER] Detailed non-Error object from streamText via vercelAiErrorHandler:',
+    '[ChatHandler:vercelAiErrorHandler] ERROR: Detailed non-Error object from streamText | Error: %o',
     error
   );
   try {
@@ -290,15 +287,15 @@ export async function POST(req: NextRequest) {
       ) {
         const providerConfig = appConfig.mcpProviders[providerId];
         if (providerConfig.enabled !== false) {
-          // Removed verbose log: console.log(`[CHAT-HANDLER] Attempting to initialize provider: ${providerId} (type: ${providerConfig.type})`);
           const initResult = await _initializeMcpClientAndTools(
             providerId,
             providerConfig
           );
           if (initResult.errorResponse) {
-            // Keep this error log
             console.error(
-              `[CHAT-HANDLER] Failed to initialize provider '${providerId}' or fetch its tools. Error: ${initResult.errorResponse.statusText}`,
+              '[ChatHandler:POST] ERROR: Failed to initialize provider or fetch its tools | ProviderID: %s, Status: %s, Response: %o',
+              providerId,
+              initResult.errorResponse.statusText,
               await initResult.errorResponse.json().catch(() => ({}))
             );
           } else if (initResult.mcpClient && initResult.discoveredMcpTools) {
@@ -313,23 +310,27 @@ export async function POST(req: NextRequest) {
                 const prefixedToolName = `${providerId}_${toolName}`;
                 discoveredMcpToolsCombined[prefixedToolName] =
                   initResult.discoveredMcpTools[toolName];
-                // Keep this log: console.log(`[CHAT-HANDLER] Registered tool for discovery: ${prefixedToolName}`);
               }
             }
           } else if (initResult.mcpClient) {
             activeMcpClients.push(initResult.mcpClient);
-            // Keep this log: console.log(`[CHAT-HANDLER] Provider '${providerId}' initialized but exposed no tools.`);
-          } // Other cases like error or skipped are handled/logged in the helper
+            console.info(
+              '[ChatHandler:POST] INFO: Provider initialized but exposed no tools | ProviderID: %s',
+              providerId
+            );
+          }
         } else {
-          // Keep this log: console.log(`[CHAT-HANDLER] Skipping disabled provider: ${providerId}`);
+          console.info(
+            '[ChatHandler:POST] INFO: Skipping disabled provider | ProviderID: %s',
+            providerId
+          );
         }
       }
     }
 
     if (Object.keys(discoveredMcpToolsCombined).length === 0) {
-      // Keep this warning
       console.warn(
-        '[CHAT-HANDLER] No tools were successfully loaded from any provider for LLM use.'
+        '[ChatHandler:POST] WARN: No tools were successfully loaded from any provider for LLM use.'
       );
     }
 
@@ -341,42 +342,20 @@ export async function POST(req: NextRequest) {
 
     let result;
     try {
-      // Removed verbose log: console.log('[CHAT-HANDLER] Attempting to call streamText...');
       result = await streamText({
         ...streamTextPayload,
         onFinish: async (event) => {
-          // Removed debugger;
-          // The onFinish event signals completion of the LLM turn.
-          // Detailed errors from the stream are handled by vercelAiErrorHandler.
-          // Errors from streamText setup are caught by the outer catch block.
-          // Logging the full event here can be very verbose, so it's removed.
+          // onFinish signals completion. Detailed errors are handled by vercelAiErrorHandler or outer catch.
         },
       });
-      // Removed verbose log: console.log('[CHAT-HANDLER] streamText call completed.');
     } catch (streamTextError: any) {
-      // Keep these detailed error logs
       console.error(
-        '[CHAT-HANDLER] Error directly from streamText call:',
-        streamTextError
+        '[ChatHandler:POST] ERROR: Error directly from streamText call | Error: %o, Message: %s, Stack: %s, Cause: %o',
+        streamTextError,
+        streamTextError.message,
+        streamTextError.stack,
+        streamTextError.cause
       );
-      if (streamTextError.message) {
-        console.error(
-          '[CHAT-HANDLER] streamText error message:',
-          streamTextError.message
-        );
-      }
-      if (streamTextError.stack) {
-        console.error(
-          '[CHAT-HANDLER] streamText error stack:',
-          streamTextError.stack
-        );
-      }
-      if (streamTextError.cause) {
-        console.error(
-          '[CHAT-HANDLER] streamText error cause:',
-          streamTextError.cause
-        );
-      }
       throw streamTextError;
     }
 
@@ -384,28 +363,34 @@ export async function POST(req: NextRequest) {
       getErrorMessage: vercelAiErrorHandler,
     });
   } catch (error: any) {
-    console.error('[CHAT-HANDLER] POST handler error:', error);
+    console.error(
+      '[ChatHandler:POST] ERROR: POST handler error | Error: %o',
+      error
+    );
     // Log additional properties if they exist
     if (error.message) {
-      console.error('[CHAT-HANDLER] Error message:', error.message);
+      console.error('[ChatHandler:POST] ERROR_MESSAGE: %s', error.message);
     }
     if (error.stack) {
-      console.error('[CHAT-HANDLER] Error stack:', error.stack);
+      console.error('[ChatHandler:POST] ERROR_STACK: %s', error.stack);
     }
     if (error.cause) {
-      console.error('[CHAT-HANDLER] Error cause:', error.cause);
+      console.error('[ChatHandler:POST] ERROR_CAUSE: %o', error.cause);
     }
     try {
       console.error(
-        '[CHAT-HANDLER] Full error object (stringified):',
+        '[ChatHandler:POST] ERROR_FULL_OBJECT: %s',
         JSON.stringify(error, Object.getOwnPropertyNames(error))
       );
     } catch (e) {
-      console.error('[CHAT-HANDLER] Could not stringify full error object:', e);
+      console.error(
+        '[ChatHandler:POST] ERROR: Could not stringify full error object | StringifyError: %o',
+        e
+      );
     }
 
     let errorMessage = 'Handler error'; // Default error message
-    let errorStatus = 500;
+    const errorStatus = 500;
 
     if (
       typeof error === 'object' &&
@@ -424,15 +409,11 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: errorMessage }, { status: errorStatus });
   } finally {
-    // Remove the diagnostic delay
-    // console.log('[CHAT-HANDLER] Starting diagnostic delay in finally block...');
-    // await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
-    // console.log('[CHAT-HANDLER] Diagnostic delay finished.');
-
     // MCP client closing
     if (activeMcpClients.length > 0) {
-      console.log(
-        `[CHAT-HANDLER] Ensuring ${activeMcpClients.length} MCP client(s) are closed (in finally block).`
+      console.info(
+        '[ChatHandler:POST_Finally] INFO: Ensuring %d MCP client(s) are closed.',
+        activeMcpClients.length
       );
       for (const client of activeMcpClients) {
         if (client && typeof client.close === 'function') {
@@ -440,17 +421,16 @@ export async function POST(req: NextRequest) {
             .close()
             .catch((closeError: Error) =>
               console.error(
-                '[CHAT-HANDLER] Error closing an MCP client in finally block:',
+                '[ChatHandler:POST_Finally] ERROR: Error closing an MCP client | Error: %o',
                 closeError
               )
             );
         } else {
           console.warn(
-            '[CHAT-HANDLER] Attempted to close an invalid or already closed client in finally block.'
+            '[ChatHandler:POST_Finally] WARN: Attempted to close an invalid or already closed client.'
           );
         }
       }
     }
-    // console.log('[CHAT-HANDLER] FINALLY BLOCK REACHED - MCP CLIENT CLOSING IS CURRENTLY DISABLED FOR DEBUGGING.');
   }
 }
