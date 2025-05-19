@@ -24,6 +24,10 @@ export interface BaseMessageProps {
     actions: MessageAction[],
     message: Message
   ) => MessageAction[];
+  // ADDED: Prop to notify parent of hover state change
+  onHoverChange?: (hovering: boolean) => void;
+  // ADDED: Prop for an accessory element to display (e.g., on hover)
+  hoverAccessory?: React.ReactNode;
 }
 
 const BaseMessage: React.FC<BaseMessageProps> = ({
@@ -37,6 +41,8 @@ const BaseMessage: React.FC<BaseMessageProps> = ({
   bubbleSx,
   renderContent,
   filterActions,
+  onHoverChange,
+  hoverAccessory,
 }) => {
   const processedActions =
     filterActions && messageActions
@@ -64,6 +70,8 @@ const BaseMessage: React.FC<BaseMessageProps> = ({
         gap: 1,
         ...sx,
       }}
+      onMouseEnter={() => onHoverChange?.(true)}
+      onMouseLeave={() => onHoverChange?.(false)}
     >
       {avatarSide === 'left' && avatarMarkup}
       <Box
@@ -73,8 +81,10 @@ const BaseMessage: React.FC<BaseMessageProps> = ({
           flexDirection: 'column',
           alignItems: alignItemsContent,
           maxWidth: '80%', // Common constraint
+          position: 'relative', // ADDED: For positioning hoverAccessory
         }}
       >
+        {hoverAccessory}
         <Box
           data-testid={id ? `${id}-bubble` : 'message-bubble'}
           sx={{
@@ -104,12 +114,6 @@ const BaseMessage: React.FC<BaseMessageProps> = ({
                 size='small'
                 onClick={() => action.handler(message)}
                 title={action.label}
-                sx={{
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  bgcolor: 'background.paper', // Default action button style
-                  '&:hover': { bgcolor: 'action.hover' },
-                }}
               >
                 {action.icon || (
                   <Typography variant='caption'>{action.label}</Typography>

@@ -7,6 +7,7 @@ import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
+import { alpha } from '@mui/material/styles';
 import React from 'react';
 
 export interface BotToolProps {
@@ -108,7 +109,15 @@ const BotTool: React.FC<BotToolProps> = ({
   const StatusDisplayComponent = statusDisplay || DefaultStatusDisplay;
 
   return (
-    <Accordion id={id} sx={{ mb: 1, width: '100%', bgcolor: 'grey.50', ...sx }}>
+    <Accordion
+      id={id}
+      sx={(theme) => ({
+        mb: 1,
+        width: '100%',
+        bgcolor: theme.palette.grey[50],
+        ...sx,
+      })}
+    >
       <AccordionSummary
         expandIcon={<ExpandMoreIcon />}
         aria-controls={`panel-${toolCallId}-content`}
@@ -120,7 +129,9 @@ const BotTool: React.FC<BotToolProps> = ({
           {...(statusDisplayProps || {})}
         />
       </AccordionSummary>
-      <AccordionDetails sx={{ bgcolor: 'white' }}>
+      <AccordionDetails
+        sx={(theme) => ({ bgcolor: theme.palette.background.paper })}
+      >
         <Box>
           <Typography
             variant='caption'
@@ -132,14 +143,14 @@ const BotTool: React.FC<BotToolProps> = ({
           </Typography>
           <Paper
             variant='outlined'
-            sx={{
-              p: 1,
+            sx={(theme) => ({
+              p: theme.spacing(1),
               maxHeight: 150,
               overflowY: 'auto',
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-all',
-              bgcolor: 'grey.100',
-            }}
+              bgcolor: theme.palette.grey[100],
+            })}
           >
             <Typography component='pre' variant='caption'>
               {args}
@@ -158,21 +169,21 @@ const BotTool: React.FC<BotToolProps> = ({
             </Typography>
             <Paper
               variant='outlined'
-              sx={{
-                p: 1,
+              sx={(theme) => ({
+                p: theme.spacing(1),
                 maxHeight: 150,
                 overflowY: 'auto',
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-all',
                 bgcolor:
                   'isError' in toolInvocation && toolInvocation.isError
-                    ? 'error.lighter'
-                    : 'grey.100',
+                    ? alpha(theme.palette.error.main, 0.1)
+                    : theme.palette.grey[100],
                 color:
                   'isError' in toolInvocation && toolInvocation.isError
-                    ? 'error.contrastText'
+                    ? theme.palette.error.dark
                     : 'inherit',
-              }}
+              })}
             >
               <Typography
                 component='pre'

@@ -43,16 +43,16 @@ const ChatToolbar: React.FC<ChatToolbarProps> = ({
           e.preventDefault(); // Prevent submit if Stop is visible
         }
       }}
-      sx={{
+      sx={(theme) => ({
         display: 'flex',
-        gap: 1,
+        gap: theme.spacing(1),
         alignItems: 'center',
-        p: 1.5, // Default padding for the toolbar
+        p: theme.spacing(1.5),
         bgcolor: 'background.paper',
         borderTop: '1px solid',
         borderColor: 'divider',
         ...sx,
-      }}
+      })}
     >
       {showFileSelector && (
         <ChatToolbarFileSelector

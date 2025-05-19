@@ -1,10 +1,15 @@
 import { TextUIPart } from '@ai-sdk/ui-utils';
-import Typography from '@mui/material/Typography';
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { Message, MessageAction } from '../types';
 import BaseMessage, { type BaseMessageProps } from './BaseMessage';
+import { markdownComponents } from './MarkdownComponents'; // Import shared components
 
-// Helper function to render bot message content
+// The local markdownComponents object and its direct MUI imports (Box, Divider, Link, Paper, Typography, List, ListItem) have been removed.
+// They are now centralized in MarkdownComponents.tsx
+
+// Helper function to render bot message content with Markdown support
 const renderBotMessageContent = (msg: Message) => {
   let contentToDisplay: React.ReactNode;
 
@@ -14,33 +19,30 @@ const renderBotMessageContent = (msg: Message) => {
     ) as TextUIPart[];
     if (textParts.length > 0) {
       contentToDisplay = textParts.map((part, index) => (
-        <Typography
+        <ReactMarkdown
           key={index}
-          variant='body2'
-          style={{ whiteSpace: 'pre-wrap' }}
+          components={markdownComponents}
+          remarkPlugins={[remarkGfm]}
         >
           {part.text}
-        </Typography>
+        </ReactMarkdown>
       ));
     } else if (!msg.content) {
-      contentToDisplay = null; // Only non-text parts and no main content
+      contentToDisplay = null;
     }
-    // If there were parts but none were text, and there IS msg.content, contentToDisplay remains undefined here.
-    // The next block will catch it.
   }
 
-  // If contentToDisplay is still undefined (meaning no text parts were processed or no parts array existed)
-  // OR if it became null (meaning parts existed but no text parts AND no msg.content for that path),
-  // then try to use msg.content directly.
   if (contentToDisplay === undefined || contentToDisplay === null) {
     if (msg.content) {
       contentToDisplay = (
-        <Typography variant='body2' style={{ whiteSpace: 'pre-wrap' }}>
+        <ReactMarkdown
+          components={markdownComponents}
+          remarkPlugins={[remarkGfm]}
+        >
           {msg.content}
-        </Typography>
+        </ReactMarkdown>
       );
     } else {
-      // If still no content (e.g. parts existed but no text parts, and no msg.content either)
       contentToDisplay = null;
     }
   }
@@ -75,12 +77,12 @@ const BotMessage: React.FC<BotMessageProps> = ({
       avatarProps={avatarProps}
       avatarSide='left'
       sx={sx}
-      bubbleSx={{
-        bgcolor: 'grey.100',
+      bubbleSx={(theme) => ({
+        bgcolor: theme.palette.grey[100],
         color: 'text.primary',
         ...contentSx,
-      }}
-      renderContent={renderBotMessageContent} // Use the moved function
+      })}
+      renderContent={renderBotMessageContent}
     />
   );
 };

@@ -8,6 +8,7 @@ import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
+import type { Message as VercelAIMessage } from 'ai';
 import * as React from 'react';
 import type { ChatBoxProps, Message } from './types';
 
@@ -49,6 +50,8 @@ export default function ChatBox(props: ChatBoxProps) {
     status,
     error,
     stop,
+    reload,
+    setMessages,
   } = useChat({
     api: api,
     initialMessages,
@@ -152,6 +155,36 @@ export default function ChatBox(props: ChatBoxProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // ADDED: Handler for regenerating response to a user message
+  const handleRegenerateResponse = (messageId: string) => {
+    const messageIndex = messages.findIndex((msg) => msg.id === messageId);
+    if (messageIndex === -1) {
+      console.error('[ChatBox] Message to regenerate not found:', messageId);
+      return;
+    }
+
+    const targetMessage = messages[messageIndex];
+    if (targetMessage.role !== 'user') {
+      console.warn(
+        '[ChatBox] Attempted to regenerate response for a non-user message:',
+        messageId
+      );
+      return;
+    }
+
+    // Create a history up to and including the target user message
+    const historyToReload = messages.slice(0, messageIndex + 1);
+
+    console.log(
+      '[ChatBox] Regenerating response for user message. Setting history then reloading:',
+      historyToReload
+    );
+    // Set the messages to the history up to the point of the user message,
+    // then call reload to get a new assistant response.
+    setMessages(historyToReload as VercelAIMessage[]); // Type assertion as Vercel AI SDK Message type
+    reload(); // Reload will use the newly set messages
+  };
+
   // Determine which components to use based on slots, falling back to defaults
   const GreetingMessageComponent = slots.greetingMessage || GreetingMessage;
   const ChatToolbarComponent = slots.chatToolbar || ChatToolbar;
@@ -224,6 +257,7 @@ export default function ChatBox(props: ChatBoxProps) {
               slotProps={chatMessageRendererSlotProps}
               disableUserAvatar={disableUserAvatar} // Pass down
               disableBotAvatar={disableBotAvatar} // Pass down
+              onRegenerate={handleRegenerateResponse} // ADDED: Pass down the handler
             />
           ))}
           <div ref={messagesEndRef} />

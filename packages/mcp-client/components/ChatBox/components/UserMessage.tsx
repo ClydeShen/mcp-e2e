@@ -1,5 +1,7 @@
+import RefreshIcon from '@mui/icons-material/Refresh';
+import { IconButton } from '@mui/material';
 import Typography from '@mui/material/Typography';
-import React from 'react';
+import React, { useState } from 'react';
 import type { Message, MessageAction } from '../types';
 import BaseMessage, { type BaseMessageProps } from './BaseMessage'; // Import BaseMessage and its props type
 
@@ -25,6 +27,7 @@ export interface UserMessageProps {
   contentSx?: object; // For the bubble, will be merged into BaseMessage's bubbleSx
   avatar?: React.ElementType;
   avatarProps?: object;
+  onRegenerate?: (messageId: string) => void;
 }
 
 const UserMessage: React.FC<UserMessageProps> = ({
@@ -35,7 +38,36 @@ const UserMessage: React.FC<UserMessageProps> = ({
   contentSx,
   avatar,
   avatarProps,
+  onRegenerate,
 }) => {
+  const [isHovered, setIsHovered] = useState(false);
+
+  let hoverAccessoryContent = null;
+  if (isHovered && onRegenerate) {
+    hoverAccessoryContent = (
+      <IconButton
+        size='small'
+        onClick={() => onRegenerate(message.id)}
+        sx={(theme) => ({
+          position: 'absolute',
+          top: theme.spacing(-1.25),
+          right: theme.spacing(-1.25),
+          zIndex: 1,
+          bgcolor: 'background.default',
+          border: `1px solid ${theme.palette.divider}`,
+          boxShadow: theme.shadows[1],
+          '&:hover': {
+            bgcolor: 'background.paper',
+            boxShadow: theme.shadows[2],
+          },
+        })}
+        aria-label='Regenerate response'
+      >
+        <RefreshIcon fontSize='inherit' />
+      </IconButton>
+    );
+  }
+
   return (
     <BaseMessage
       id={id}
@@ -44,14 +76,16 @@ const UserMessage: React.FC<UserMessageProps> = ({
       avatar={avatar}
       avatarProps={avatarProps}
       avatarSide='right'
-      sx={sx} // Pass root ListItem sx directly
+      sx={sx}
       bubbleSx={{
         bgcolor: 'primary.main',
         color: 'primary.contrastText',
-        ...contentSx, // Spread user-defined contentSx for the bubble
+        ...contentSx,
       }}
       renderContent={renderUserMessageContent}
       filterActions={filterUserMessageActions}
+      onHoverChange={setIsHovered}
+      hoverAccessory={hoverAccessoryContent}
     />
   );
 };

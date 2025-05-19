@@ -3,9 +3,12 @@
 import { TextUIPart, ToolInvocationUIPart } from '@ai-sdk/ui-utils';
 import { Box, IconButton, ListItem, Typography } from '@mui/material'; // For combined text/tool messages
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { Message, MessageAction, MessageRenderProps } from '../types';
 import BotMessage from './BotMessage';
 import BotTool from './BotTool';
+import { markdownComponents } from './MarkdownComponents'; // ADDED: Import shared components
 import UserMessage from './UserMessage';
 
 // Import prop types for more specific slotProps typing
@@ -44,6 +47,7 @@ interface ChatMessageRendererProps {
   slotProps?: MessageRendererSlotProps; // SlotProps passed down from ChatBox
   disableUserAvatar?: boolean;
   disableBotAvatar?: boolean;
+  onRegenerate?: (messageId: string) => void;
 }
 
 const ChatMessageRenderer: React.FC<ChatMessageRendererProps> = ({
@@ -55,6 +59,7 @@ const ChatMessageRenderer: React.FC<ChatMessageRendererProps> = ({
   slotProps = {},
   disableUserAvatar = false,
   disableBotAvatar = false,
+  onRegenerate,
 }) => {
   if (customRenderMessage) {
     return customRenderMessage({ message, id });
@@ -78,6 +83,7 @@ const ChatMessageRenderer: React.FC<ChatMessageRendererProps> = ({
         avatar={UserAvatarToRender || undefined}
         avatarProps={slotProps.userMessageAvatar}
         {...(slotProps.userMessage || {})}
+        onRegenerate={onRegenerate}
       />
     );
   }
@@ -141,9 +147,12 @@ const ChatMessageRenderer: React.FC<ChatMessageRendererProps> = ({
                   ...(slotProps.botMessage?.contentSx || {}),
                 }}
               >
-                <Typography variant='body2' style={{ whiteSpace: 'pre-wrap' }}>
+                <ReactMarkdown
+                  components={markdownComponents}
+                  remarkPlugins={[remarkGfm]}
+                >
                   {textPart.text}
-                </Typography>
+                </ReactMarkdown>
               </Box>
             );
           } else if (part.type === 'tool-invocation') {
