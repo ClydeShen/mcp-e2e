@@ -3,14 +3,14 @@ import type { SxProps, Theme } from '@mui/material/styles';
 import React from 'react';
 
 export interface MessageContainerProps {
-  id?: string;
+  id: string;
+  className?: string;
   sx?: SxProps<Theme>;
   avatarSide: 'left' | 'right';
-  onHoverChange?: (hovering: boolean) => void;
-  // Note: hoverAccessory is handled by the content area, not directly by MessageContainer
-  avatar: React.ReactNode;
+  onHoverChange?: (isHovered: boolean) => void;
+  avatar?: React.ReactNode;
   contentArea: React.ReactNode;
-  className?: string; // Allow className to be passed for BaseMessage's use
+  // Note: hoverAccessory is handled by the content area, not directly by MessageContainer
 }
 
 const MessageContainer: React.FC<MessageContainerProps> = ({

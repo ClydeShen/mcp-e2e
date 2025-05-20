@@ -39,8 +39,8 @@ const theme = createTheme({
   components: {
     MuiCssBaseline: {
       styleOverrides: (themeParam) => `
-        code {
-          font-family: ${monospaceFontStack};
+        body code {
+          font-family: 'FiraCode', ${monospaceFontStack} !important;
           font-size: ${themeParam.typography.body2.fontSize || '0.875rem'};
           background-color: ${themeParam.palette.action.hover};
           padding: ${themeParam.spacing(
@@ -49,32 +49,22 @@ const theme = createTheme({
           )}; /* e.g., 2px 4px if spacing(1) is 8px */
           border-radius: ${themeParam.shape.borderRadius * 0.75}px;
         }
-        pre {
-          font-family: ${monospaceFontStack};
-          font-size: ${themeParam.typography.body2.fontSize || '0.875rem'};
-          line-height: ${themeParam.typography.body2.lineHeight || 1.43};
-          background-color: ${
-            themeParam.palette.mode === 'dark'
-              ? themeParam.palette.grey[900]
-              : themeParam.palette.grey[100]
-          };
+
+        body pre {
+          font-family: 'FiraCode', ${monospaceFontStack} !important;
+          font-size: 0.8rem !important;
           padding: ${themeParam.spacing(1)};
           border-radius: ${themeParam.shape.borderRadius}px;
           overflow: auto;
-          white-space: pre;
         }
-        /* 
-          Specific styling for <code> within <pre> is generally not needed
-          if the syntax highlighter handles it or if the <pre> styles suffice.
-          Example for transparency if pre has its own background:
-          pre > code {
-            font-size: inherit; 
-            font-family: inherit;
-            line-height: inherit;
-            background-color: transparent; 
-            padding: 0;
-          }
-        */
+
+        body pre > code {
+          font-family: inherit !important;
+          font-size: inherit !important;
+          background-color: transparent;
+          padding: 0;
+          border-radius: 0;
+        }
       `,
     },
   },

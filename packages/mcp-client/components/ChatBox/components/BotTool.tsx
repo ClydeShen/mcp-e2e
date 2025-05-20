@@ -7,13 +7,13 @@ import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
-import { alpha } from '@mui/material/styles';
+import { alpha, SxProps, Theme } from '@mui/material/styles';
 import React from 'react';
 
 export interface BotToolProps {
-  id?: string;
+  id: string;
   toolInvocation: ToolInvocation;
-  sx?: object; // Allow style overrides for the Accordion
+  sx?: SxProps<Theme>;
   statusDisplay?: React.ElementType; // Slot for custom status display
   statusDisplayProps?: object; // Props for the custom status display
 }
@@ -114,7 +114,7 @@ const BotTool: React.FC<BotToolProps> = ({
       sx={(theme) => ({
         mb: 1,
         width: '100%',
-        bgcolor: theme.palette.grey[50],
+        bgcolor: theme.palette.grey[100],
         ...sx,
       })}
     >

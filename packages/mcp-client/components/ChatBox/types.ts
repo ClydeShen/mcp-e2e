@@ -32,7 +32,8 @@ export type MessageActionType =
   | 'copy'
   | 'regenerate'
   | 'thumbsUp'
-  | 'thumbsDown';
+  | 'thumbsDown'
+  | 'edit';
 
 export interface MessageAction {
   type: MessageActionType;

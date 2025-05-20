@@ -13,6 +13,7 @@ import * as React from 'react';
 import type { ChatBoxProps, Message } from './types';
 
 // Import sub-components
+import { ChatBoxProvider } from './ChatBoxContext'; // Import the provider
 import BaseMessage from './components/BaseMessage'; // Import BaseMessage
 import ChatMessageRenderer from './components/ChatMessageRenderer'; // Import the new orchestrator
 import ChatToolbar from './components/ChatToolbar';
@@ -39,7 +40,7 @@ export default function ChatBox(props: ChatBoxProps) {
     disableUserAvatar = false, // New prop with default
     disableBotAvatar = false, // New prop with default
   } = props;
-
+  const rootId = props.id || 'chatbox';
   const abortControllerRef = React.useRef<AbortController | null>(null);
 
   const {
@@ -67,7 +68,7 @@ export default function ChatBox(props: ChatBoxProps) {
         onError(e);
       }
     },
-    maxSteps: 5, // Allow multiple steps for tool calls and follow-up responses
+    maxSteps: props.maxSteps || 5, // Allow multiple steps for tool calls and follow-up responses
     async onToolCall({ toolCall }) {
       const { toolName, args } = toolCall;
 
@@ -200,6 +201,34 @@ export default function ChatBox(props: ChatBoxProps) {
     reload(); // Reload will use the newly set messages
   };
 
+  const handleEditSubmit = (messageId: string, newContent: string) => {
+    const messageIndex = messages.findIndex((msg) => msg.id === messageId);
+    if (messageIndex === -1) {
+      console.error(
+        '[ChatBox:handleEditSubmit] ERROR: Message to edit not found | MessageID: %s',
+        messageId
+      );
+      return;
+    }
+
+    const updatedMessages = messages.map((msg, index) => {
+      if (index === messageIndex) {
+        return { ...msg, content: newContent };
+      }
+      return msg;
+    });
+
+    // Create a history up to and including the EDITED user message
+    const historyToReload = updatedMessages.slice(0, messageIndex + 1);
+
+    console.log(
+      '[ChatBox:handleEditSubmit] INFO: Submitting edited message | History: %o',
+      historyToReload
+    );
+    setMessages(historyToReload as VercelAIMessage[]);
+    reload();
+  };
+
   // Determine which components to use based on slots, falling back to defaults
   const GreetingMessageComponent = slots.greetingMessage || GreetingMessage;
   const ChatToolbarComponent = slots.chatToolbar || ChatToolbar;
@@ -233,120 +262,109 @@ export default function ChatBox(props: ChatBoxProps) {
   const showProcessingIndicator =
     isActive && (!lastMessage || (lastMessage.role as string) !== 'tool');
 
+  const contextValue = {
+    rootId,
+    slots,
+    slotProps,
+    disableUserAvatar,
+    disableBotAvatar,
+    onRegenerate: handleRegenerateResponse,
+    onEditSubmit: handleEditSubmit,
+  };
+
   return (
-    <Stack spacing={1} sx={{ height: '100%', ...sx }} id={props.id}>
-      {header}
-      <Paper
-        elevation={0}
-        sx={{
-          flexGrow: 1,
-          overflowY: 'auto',
-          p: 2,
-          mb: 0,
-          borderColor: 'divider',
-          borderRadius: 0,
-          bgcolor: 'background.default',
-        }}
-      >
-        <List sx={{ py: 0 }}>
-          {messages.length === 0 && !isActive && !error && (
-            <GreetingMessageComponent
-              {...(slotProps.greetingMessage || {})}
-              id={props.id ? `${props.id}-greeting` : undefined}
+    <ChatBoxProvider value={contextValue}>
+      <Stack spacing={1} sx={{ height: '100%', ...sx }} id={`${rootId}-root`}>
+        {header}
+        <Paper
+          elevation={0}
+          sx={{
+            flexGrow: 1,
+            overflowY: 'auto',
+            p: 2,
+            mb: 0,
+            borderColor: 'divider',
+            borderRadius: 0,
+            bgcolor: 'background.default',
+          }}
+        >
+          <List sx={{ py: 0 }}>
+            {messages.length === 0 && !isActive && !error && (
+              <GreetingMessageComponent
+                {...(slotProps.greetingMessage || {})}
+                id={`${rootId}-greeting`}
+              />
+            )}
+            {messages.map((m: Message, index: number) => (
+              <ChatMessageRenderer
+                key={m.id || `message-${index}`}
+                id={m.id || `${rootId}-message-${index}`}
+                message={m}
+                messageActions={messageActions}
+                customRenderMessage={renderMessage}
+              />
+            ))}
+            <div ref={messagesEndRef} />
+          </List>
+          {showProcessingIndicator && (
+            <BaseMessage
+              id={`${rootId}-processing-indicator`}
+              message={{
+                id: 'processing-indicator',
+                role: 'assistant',
+                content: '' /* Dummy content, not rendered directly */,
+              }}
+              avatar={BotAvatarComponentToRender || undefined}
+              avatarProps={slotProps.botMessageAvatar || {}}
+              avatarSide='left'
+              renderContent={() => <CircularProgress size={20} />}
+              bubbleSx={{
+                p: 1.5, // Padding inside the bubble
+                bgcolor: 'grey.100',
+                color: 'text.primary',
+                boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: '40px',
+                minWidth: '40px',
+              }}
+              // sx for ListItem can be added here if specific overrides are needed
             />
           )}
-          {messages.map((m: Message, index: number) => (
-            <ChatMessageRenderer
-              key={m.id || `message-${index}`} // Ensure key is always present
-              id={
-                m.id ||
-                (props.id
-                  ? `${props.id}-message-${index}`
-                  : `message-item-${index}`)
-              }
-              message={m}
-              messageActions={messageActions}
-              customRenderMessage={renderMessage} // Pass the custom renderer prop
-              // Pass down the relevant slots and slotProps for individual message components
-              slots={chatMessageRendererSlots}
-              slotProps={chatMessageRendererSlotProps}
-              disableUserAvatar={disableUserAvatar} // Pass down
-              disableBotAvatar={disableBotAvatar} // Pass down
-              onRegenerate={handleRegenerateResponse} // ADDED: Pass down the handler
-            />
-          ))}
-          <div ref={messagesEndRef} />
-        </List>
-        {showProcessingIndicator && (
-          <BaseMessage
-            id={
-              props.id
-                ? `${props.id}-processing-indicator`
-                : 'chatbox-processing-indicator'
-            }
-            message={{
-              id: 'processing-indicator',
-              role: 'assistant',
-              content: '' /* Dummy content, not rendered directly */,
-            }}
-            avatar={BotAvatarComponentToRender || undefined}
-            avatarProps={slotProps.botMessageAvatar || {}}
-            avatarSide='left'
-            renderContent={() => <CircularProgress size={20} />}
-            bubbleSx={{
-              p: 1.5, // Padding inside the bubble
-
-              bgcolor: 'grey.100',
-              color: 'text.primary',
-              boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              minHeight: '40px',
-              minWidth: '40px',
-            }}
-            // sx for ListItem can be added here if specific overrides are needed
-          />
-        )}
-        {error && (
-          <ListItem
-            sx={{ justifyContent: 'center', py: 1 }}
-            id={props.id ? `${props.id}-error-message` : undefined}
-          >
-            <Box
-              sx={{
-                p: 1,
-                borderRadius: 1,
-                bgcolor: 'error.light',
-                color: 'error.contrastText',
-              }}
+          {error && (
+            <ListItem
+              id={`${rootId}-error-message`}
+              sx={{ justifyContent: 'center', py: 1 }}
             >
-              <Typography variant='body2'>
-                Error: {error.message || 'Could not connect to the AI'}
-              </Typography>
-            </Box>
-          </ListItem>
-        )}
-      </Paper>
-      <ChatToolbarComponent
-        input={input}
-        handleInputChange={handleInputChange}
-        handleSubmit={handleSubmit}
-        inputPlaceholder={inputPlaceholder}
-        isProcessing={isActive}
-        onStopProcessing={handleStopProcessing}
-        showFileSelector={showFileSelector}
-        showVoiceInput={showVoiceInput}
-        // Spread slotProps for the toolbar, allowing overrides of default/passed props
-        {...(slotProps.chatToolbar || {})}
-        // Ensure id from slotProps can override, or generate one if ChatToolbar is the root for an id
-        id={
-          slotProps.chatToolbar?.id || props.id
-            ? `${props.id}-toolbar`
-            : undefined
-        }
-      />
-      {footer}
-    </Stack>
+              <Box
+                sx={{
+                  p: 1,
+                  borderRadius: 1,
+                  bgcolor: 'error.light',
+                  color: 'error.contrastText',
+                }}
+              >
+                <Typography variant='body2'>
+                  Error: {error.message || 'Could not connect to the AI'}
+                </Typography>
+              </Box>
+            </ListItem>
+          )}
+        </Paper>
+        <ChatToolbarComponent
+          input={input}
+          handleInputChange={handleInputChange}
+          handleSubmit={handleSubmit}
+          inputPlaceholder={inputPlaceholder}
+          isProcessing={isActive}
+          onStopProcessing={handleStopProcessing}
+          showFileSelector={showFileSelector}
+          showVoiceInput={showVoiceInput}
+          {...(slotProps.chatToolbar || {})}
+        />
+        {footer}
+      </Stack>
+    </ChatBoxProvider>
   );
 }

@@ -3,9 +3,11 @@ import type { SxProps, Theme } from '@mui/material/styles';
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useChatBox } from '../ChatBoxContext';
 import type { Message, MessageAction } from '../types';
 import BaseMessage, { type BaseMessageProps } from './BaseMessage';
-import { markdownComponents } from './MarkdownComponents'; // Import shared components
+import BotTool from './BotTool';
+import { markdownComponents } from './MarkdownComponents';
 
 // The local markdownComponents object and its direct MUI imports (Box, Divider, Link, Paper, Typography, List, ListItem) have been removed.
 // They are now centralized in MarkdownComponents.tsx
@@ -21,7 +23,7 @@ const renderBotMessageContent = (msg: Message): React.ReactNode => {
     if (textParts.length > 0) {
       contentToDisplay = textParts.map((part, index) => (
         <ReactMarkdown
-          key={index}
+          key={`text-part-${index}`}
           components={markdownComponents}
           remarkPlugins={[remarkGfm]}
         >
@@ -51,13 +53,11 @@ const renderBotMessageContent = (msg: Message): React.ReactNode => {
 };
 
 export interface BotMessageProps {
-  id?: string;
+  id: string;
   message: Message;
   messageActions?: MessageAction[];
   sx?: BaseMessageProps['sx'];
   bubbleSx?: SxProps<Theme>;
-  avatar?: React.ElementType;
-  avatarProps?: object;
 }
 
 const BotMessage: React.FC<BotMessageProps> = ({
@@ -66,64 +66,99 @@ const BotMessage: React.FC<BotMessageProps> = ({
   messageActions,
   sx,
   bubbleSx: incomingBubbleSx,
-  avatar,
-  avatarProps,
 }) => {
-  const defaultBotStylesFunction = (theme: Theme) => ({
-    bgcolor: theme.palette.grey[100],
-    color: theme.palette.text.primary,
-  });
+  const { slots, slotProps, disableBotAvatar } = useChatBox();
 
-  let finalBubbleSxForBase: SxProps<Theme>;
+  const BotAvatarToRender = !disableBotAvatar && slots?.botMessageAvatar;
+  const finalAvatarProps = slotProps?.botMessageAvatar || {};
 
-  if (!incomingBubbleSx) {
-    finalBubbleSxForBase = defaultBotStylesFunction;
-  } else {
-    const sxElementArray: Array<
-      Exclude<SxProps<Theme>, ReadonlyArray<any> | boolean | null | undefined>
-    > = [defaultBotStylesFunction];
+  let messageNodes: React.ReactNode = null;
 
-    if (Array.isArray(incomingBubbleSx)) {
-      incomingBubbleSx.forEach((item) => {
-        if (item && (typeof item === 'object' || typeof item === 'function')) {
-          sxElementArray.push(
-            item as Exclude<
-              SxProps<Theme>,
-              ReadonlyArray<any> | boolean | null | undefined
-            >
-          );
-        }
-      });
-    } else {
-      if (
-        incomingBubbleSx &&
-        (typeof incomingBubbleSx === 'object' ||
-          typeof incomingBubbleSx === 'function')
-      ) {
-        sxElementArray.push(
-          incomingBubbleSx as Exclude<
-            SxProps<Theme>,
-            ReadonlyArray<any> | boolean | null | undefined
-          >
+  if (message.parts && message.parts.length > 0) {
+    messageNodes = message.parts.map((part, index) => {
+      const partIdBase = `${id}-${part.type}-${index}`;
+      if (part.type === 'text') {
+        return (
+          <BaseMessage
+            key={`text-part-${index}`}
+            id={partIdBase}
+            message={message}
+            messageActions={messageActions}
+            avatar={BotAvatarToRender || undefined}
+            avatarProps={finalAvatarProps}
+            avatarSide='left'
+            sx={sx}
+            bubbleSx={{
+              bgcolor: (theme) => theme.palette.grey[100],
+              ...(incomingBubbleSx || {}),
+            }}
+            renderContent={() => (
+              <ReactMarkdown
+                components={markdownComponents}
+                remarkPlugins={[remarkGfm]}
+              >
+                {part.text}
+              </ReactMarkdown>
+            )}
+          />
+        );
+      } else if (part.type === 'tool-invocation') {
+        return (
+          <BaseMessage
+            key={`tool-part-${index}`}
+            id={`${partIdBase}-${part.toolInvocation.toolCallId || 'call'}`}
+            message={message}
+            messageActions={messageActions}
+            avatar={BotAvatarToRender || undefined}
+            avatarProps={finalAvatarProps}
+            avatarSide='left'
+            sx={sx}
+            hideBubble
+            renderContent={() => (
+              <BotTool
+                id={`${partIdBase}-bt-${
+                  part.toolInvocation.toolCallId || 'call'
+                }`}
+                toolInvocation={part.toolInvocation}
+                sx={slotProps?.botTool?.sx}
+              />
+            )}
+          />
         );
       }
-    }
-    finalBubbleSxForBase = sxElementArray;
+      return null;
+    });
+  } else if (message.content) {
+    messageNodes = (
+      <BaseMessage
+        id={id}
+        message={message}
+        messageActions={messageActions}
+        avatar={BotAvatarToRender || undefined}
+        avatarProps={finalAvatarProps}
+        avatarSide='left'
+        sx={sx}
+        bubbleSx={{
+          bgcolor: (theme) => theme.palette.grey[100],
+          ...(incomingBubbleSx || {}),
+        }}
+        renderContent={() => (
+          <ReactMarkdown
+            components={markdownComponents}
+            remarkPlugins={[remarkGfm]}
+          >
+            {message.content}
+          </ReactMarkdown>
+        )}
+      />
+    );
   }
 
-  return (
-    <BaseMessage
-      id={id}
-      message={message}
-      messageActions={messageActions}
-      avatar={avatar}
-      avatarProps={avatarProps}
-      avatarSide='left'
-      sx={sx}
-      bubbleSx={finalBubbleSxForBase}
-      renderContent={renderBotMessageContent}
-    />
-  );
+  if (!messageNodes) {
+    return null;
+  }
+
+  return <>{messageNodes}</>;
 };
 
 export default BotMessage;

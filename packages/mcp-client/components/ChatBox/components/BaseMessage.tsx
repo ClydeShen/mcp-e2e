@@ -1,3 +1,4 @@
+import { Stack } from '@mui/material';
 import Box from '@mui/material/Box';
 import type { SxProps, Theme } from '@mui/material/styles';
 import React from 'react';
@@ -8,7 +9,7 @@ import MessageContainer from './MessageContainer';
 import MessageContentBubble from './MessageContentBubble';
 
 export interface BaseMessageProps {
-  id?: string;
+  id: string;
   message: Message;
   messageActions?: MessageAction[];
   avatar?: React.ElementType;
@@ -25,6 +26,7 @@ export interface BaseMessageProps {
   hoverAccessory?: React.ReactNode;
   // Added to allow passing className from higher-order components like UserMessage/BotMessage
   className?: string;
+  hideBubble?: boolean;
 }
 
 const BaseMessage: React.FC<BaseMessageProps> = ({
@@ -41,6 +43,7 @@ const BaseMessage: React.FC<BaseMessageProps> = ({
   onHoverChange,
   hoverAccessory,
   className,
+  hideBubble = false,
 }) => {
   const processedActions =
     filterActions && messageActions
@@ -48,7 +51,7 @@ const BaseMessage: React.FC<BaseMessageProps> = ({
       : messageActions;
 
   const alignItemsContent = avatarSide === 'left' ? 'flex-start' : 'flex-end';
-
+  const ContentBubble = hideBubble ? Stack : MessageContentBubble;
   const avatarNode = (
     <MessageAvatar
       AvatarComponent={AvatarComponent}
@@ -58,7 +61,7 @@ const BaseMessage: React.FC<BaseMessageProps> = ({
 
   const contentAreaNode = (
     <Box
-      data-testid={id ? `${id}-content-area` : 'message-content-area'}
+      data-testid={`${id}-content-area`}
       sx={{
         display: 'flex',
         flexDirection: 'column',
@@ -68,9 +71,9 @@ const BaseMessage: React.FC<BaseMessageProps> = ({
       }}
     >
       {hoverAccessory}
-      <MessageContentBubble id={id ? `${id}-bubble` : undefined} sx={bubbleSx}>
+      <ContentBubble id={`${id}-bubble`} sx={bubbleSx}>
         {renderContent(message)}
-      </MessageContentBubble>
+      </ContentBubble>
       <MessageActions
         actions={processedActions || []}
         message={message}

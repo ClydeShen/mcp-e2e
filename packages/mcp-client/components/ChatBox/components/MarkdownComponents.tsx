@@ -168,11 +168,6 @@ export const markdownComponents: Components = {
             component='pre'
             {...preProps}
             sx={(theme) => ({
-              my: theme.spacing(1),
-              overflow: 'auto',
-              fontSize: theme.typography.body2.fontSize,
-              lineHeight: theme.typography.body2.lineHeight,
-              whiteSpace: 'pre',
               ...(typeof preProps.sx === 'function'
                 ? preProps.sx(theme)
                 : preProps.sx),
@@ -186,9 +181,6 @@ export const markdownComponents: Components = {
             sx={(theme) => ({
               display: 'block',
               p: theme.spacing(0.5),
-              fontFamily: 'inherit',
-              fontSize: 'inherit',
-              lineHeight: 'inherit',
               ...(typeof codeProps.sx === 'function'
                 ? codeProps.sx(theme)
                 : codeProps.sx),

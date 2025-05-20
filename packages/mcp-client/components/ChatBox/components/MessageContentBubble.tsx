@@ -18,7 +18,7 @@ const MessageContentBubble: React.FC<MessageContentBubbleProps> = ({
   return (
     <Paper
       elevation={1}
-      data-testid={id || 'message-bubble'}
+      data-testid={id}
       className={className}
       sx={{
         p: 1.5,
