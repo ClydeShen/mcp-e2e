@@ -110,33 +110,152 @@ async function _executeHttp(
 
 // Helper function for SSE provider
 async function _executeSse(
-  providerConfig: McpSseProvider
+  providerConfig: McpSseProvider,
+  inputData: string // This inputData should be a JSON string with tool_name and arguments
 ): Promise<McpToolExecutionResult> {
   const providerId = providerConfig.id;
-  const sseConfig = providerConfig.config; // No longer need 'as SseConfig' due to McpSseProvider type
-  return new Promise<McpToolExecutionResult>((resolve) => {
-    const eventSource = new EventSource(sseConfig.url, {
-      withCredentials: sseConfig.withCredentials,
-    });
+  const sseConfig = providerConfig.config;
+  const sseUrl = new URL(sseConfig.url);
+  const toolExecutionUrl = `${sseUrl.protocol}//${sseUrl.host}/execute-tool`;
 
-    eventSource.onmessage = (event) => {
-      eventSource.close();
-      resolve({ output: event.data, providerId });
-    };
+  let eventSource: EventSource | null = null;
 
-    eventSource.onerror = (error) => {
-      eventSource.close();
-      console.error(
-        '[McpToolExecutor:_executeSse] ERROR: SSE connection error | Provider: %s, URL: %s, Error: %o',
-        providerId,
-        sseConfig.url,
-        error
-      );
-      resolve({
-        error: `SSE connection to ${providerId} at ${sseConfig.url} failed.`,
+  return new Promise<McpToolExecutionResult>((resolve, reject) => {
+    try {
+      const parsedInput = JSON.parse(inputData);
+      const { tool_name, arguments: args } = parsedInput;
+
+      if (!tool_name) {
+        return reject({
+          // Reject promise for clarity
+          error: `SSE tool execution for ${providerId} failed: 'tool_name' missing in inputData.`,
+          providerId,
+        });
+      }
+
+      const requestId = `sse-tool-${Date.now()}-${Math.random()
+        .toString(36)
+        .substring(2, 10)}`;
+
+      eventSource = new EventSource(sseConfig.url, {
+        withCredentials: sseConfig.withCredentials,
+      });
+
+      const timeoutId = setTimeout(() => {
+        if (eventSource) eventSource.close();
+        reject({
+          // Reject promise for clarity
+          error: `SSE tool execution for ${providerId} timed out waiting for tool_response for request_id: ${requestId}.`,
+          providerId,
+        });
+      }, 30000); // 30-second timeout
+
+      eventSource.addEventListener('tool_response', (event: MessageEvent) => {
+        try {
+          const toolResponseData = JSON.parse(event.data);
+          if (toolResponseData.request_id === requestId) {
+            clearTimeout(timeoutId);
+            if (eventSource) eventSource.close();
+            if (toolResponseData.error) {
+              resolve({ error: toolResponseData.error, providerId });
+            } else {
+              resolve({
+                output: JSON.stringify(toolResponseData.result),
+                providerId,
+              });
+            }
+          }
+        } catch (e) {
+          console.error(
+            '[McpToolExecutor:_executeSse] ERROR: Could not parse tool_response data | Error: %o',
+            e
+          );
+          // Don't resolve/reject here, might be a message for another request
+        }
+      });
+
+      eventSource.onerror = (error) => {
+        clearTimeout(timeoutId);
+        if (eventSource) eventSource.close();
+        console.error(
+          '[McpToolExecutor:_executeSse] ERROR: SSE connection error | Provider: %s, URL: %s, Error: %o',
+          providerId,
+          sseConfig.url,
+          error
+        );
+        reject({
+          // Reject promise for clarity
+          error: `SSE connection to ${providerId} at ${sseConfig.url} failed.`,
+          providerId,
+        });
+      };
+
+      // Now, make the HTTP POST request to trigger the tool
+      fetch(toolExecutionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tool_name,
+          arguments: args,
+          request_id: requestId,
+        }),
+      })
+        .then((response) => {
+          if (!response.ok) {
+            response
+              .json()
+              .then((errData) => {
+                clearTimeout(timeoutId);
+                if (eventSource) eventSource.close();
+                console.error(
+                  '[McpToolExecutor:_executeSse] ERROR: HTTP POST to /execute-tool failed | Status: %s, Body: %o',
+                  response.status,
+                  errData
+                );
+                reject({
+                  // Reject promise for clarity
+                  error: `Failed to trigger tool ${tool_name} on ${providerId}. HTTP status: ${
+                    response.status
+                  }. Error: ${errData.error || response.statusText}`,
+                  providerId,
+                });
+              })
+              .catch(() => {
+                clearTimeout(timeoutId);
+                if (eventSource) eventSource.close();
+                reject({
+                  error: `Failed to trigger tool ${tool_name} on ${providerId}. HTTP status: ${response.status}. Could not parse error response.`,
+                  providerId,
+                });
+              });
+          } else {
+            // HTTP call was successful, now we just wait for the SSE 'tool_response' event
+            console.log(
+              `[McpToolExecutor:_executeSse] INFO: Successfully sent tool execution request to ${toolExecutionUrl} for request_id: ${requestId}`
+            );
+          }
+        })
+        .catch((fetchError) => {
+          clearTimeout(timeoutId);
+          if (eventSource) eventSource.close();
+          console.error(
+            '[McpToolExecutor:_executeSse] ERROR: Network error during HTTP POST to /execute-tool | Error: %o',
+            fetchError
+          );
+          reject({
+            // Reject promise for clarity
+            error: `Network error when trying to trigger tool ${tool_name} on ${providerId}: ${fetchError.message}`,
+            providerId,
+          });
+        });
+    } catch (e: any) {
+      // Catch JSON parsing errors for inputData or other synchronous errors
+      if (eventSource) eventSource.close();
+      reject({
+        error: `Error preparing SSE tool execution for ${providerId}: ${e.message}`,
         providerId,
       });
-    };
+    }
   });
 }
 
@@ -200,7 +319,8 @@ const providerExecutorMap: Partial<
 > = {
   stdio: _executeStdioViaApi as ToolExecutor, // Cast needed due to specific type in helper
   http: _executeHttp as ToolExecutor, // Cast needed
-  sse: (providerConfig) => _executeSse(providerConfig as McpSseProvider), // Wrapper for sse
+  sse: (providerConfig, inputData) =>
+    _executeSse(providerConfig as McpSseProvider, inputData), // Wrapper for sse
   websocket: _executeWebSocket as ToolExecutor, // Cast needed
 };
 

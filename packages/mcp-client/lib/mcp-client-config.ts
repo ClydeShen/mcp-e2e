@@ -1,5 +1,7 @@
 import fs from 'fs';
 import path from 'path';
+import type { LLMConfig } from './mcp-config.schema';
+import { AppConfigSchema } from './mcp-config.schema';
 
 // --- Configuration Types ---
 
@@ -77,16 +79,6 @@ export type McpProviderConfig =
   | McpSseProvider
   | McpWebSocketProvider;
 
-export interface LLMConfig {
-  provider: string; // e.g., "bedrock", "openai"
-  model: string;
-  defaultSystemPrompt?: string; // Optional as per TR_CONFIG_008 & our simplification
-  temperature?: number; // Optional as per TR_CONFIG_008 & our simplification
-  maxTokens?: number; // Added max_tokens
-  maxSteps?: number; // Added maxSteps
-  // API keys/credentials MUST be handled server-side and not stored here.
-}
-
 export interface AppConfig {
   llm?: LLMConfig; // Optional global LLM config as per TR_CONFIG_008
   mcpProviders: Record<string, McpProviderConfig>; // Changed from Omit<McpProviderConfig, 'id'>
@@ -98,16 +90,14 @@ export interface AppConfig {
 // --- Configuration Loader ---
 
 let loadedConfig: AppConfig | null = null;
-// Construct configFilePath at the module level for clarity
-// Assumes mcp.config.json is in the root of the mcp-client package when Next.js server runs.
 const projectRoot = process.cwd(); // This is typically packages/mcp-client/
 const configFilePath = path.join(projectRoot, 'mcp.config.json');
 
 /**
- * Loads, parses, and caches the mcp.config.json file.
+ * Loads, parses, and validates the mcp.config.json file using Zod schemas.
  * This function is intended for server-side use in a Next.js application.
- * @returns The parsed AppConfig object.
- * @throws Error if the config file cannot be read or parsed.
+ * @returns The parsed and validated AppConfig object.
+ * @throws Error if the config file cannot be read, parsed, or fails validation.
  */
 export function getMcpConfig(): AppConfig {
   if (loadedConfig) {
@@ -120,148 +110,24 @@ export function getMcpConfig(): AppConfig {
         `mcp.config.json not found at ${configFilePath}. Please ensure the file exists.`
       );
     }
-    const fileContents = fs.readFileSync(configFilePath, 'utf-8');
-    const parsedJson = JSON.parse(fileContents) as Partial<AppConfig>;
 
-    if (
-      !parsedJson.mcpProviders ||
-      typeof parsedJson.mcpProviders !== 'object'
-    ) {
+    const fileContents = fs.readFileSync(configFilePath, 'utf-8');
+    const parsedJson = JSON.parse(fileContents);
+
+    // Validate the config using Zod schema
+    const validationResult = AppConfigSchema.safeParse(parsedJson);
+
+    if (!validationResult.success) {
       throw new Error(
-        'Invalid mcp.config.json: mcpProviders is missing or not an object.'
+        `Invalid mcp.config.json: ${validationResult.error.message}`
       );
     }
 
-    const validatedProviders: Record<string, McpProviderConfig> = {};
-
-    for (const providerId in parsedJson.mcpProviders) {
-      if (
-        Object.prototype.hasOwnProperty.call(
-          parsedJson.mcpProviders,
-          providerId
-        )
-      ) {
-        const providerRaw = parsedJson.mcpProviders[providerId] as any;
-
-        if (!providerRaw.name) {
-          throw new Error(
-            `Provider "${providerId}" is missing required field: name.`
-          );
-        }
-
-        let effectiveType = providerRaw.type as ProviderType | undefined;
-        if (
-          !effectiveType &&
-          providerRaw.command &&
-          typeof providerRaw.command === 'string'
-        ) {
-          effectiveType = 'stdio';
-        }
-
-        if (!effectiveType) {
-          throw new Error(
-            `Provider "${providerId}" is missing type or cannot be inferred as stdio.`
-          );
-        }
-
-        const commonData = {
-          name: providerRaw.name,
-          description: providerRaw.description,
-          capabilities: providerRaw.capabilities,
-          enabled:
-            providerRaw.enabled !== undefined ? providerRaw.enabled : true,
-        };
-
-        switch (effectiveType) {
-          case 'stdio':
-            if (
-              !providerRaw.command ||
-              typeof providerRaw.command !== 'string'
-            ) {
-              throw new Error(
-                `Invalid stdio provider "${providerId}": command (string) missing.`
-              );
-            }
-            validatedProviders[providerId] = {
-              id: providerId,
-              ...commonData,
-              type: 'stdio',
-              command: providerRaw.command,
-              args: providerRaw.args || [],
-              cwd: providerRaw.cwd,
-              env: providerRaw.env,
-            } as McpStdioProvider;
-            break;
-          case 'http':
-            if (
-              !providerRaw.config ||
-              typeof providerRaw.config !== 'object' ||
-              !providerRaw.config.url ||
-              !providerRaw.config.method
-            ) {
-              throw new Error(
-                `Invalid http provider "${providerId}": config, config.url, or method missing.`
-              );
-            }
-            validatedProviders[providerId] = {
-              id: providerId,
-              ...commonData,
-              type: 'http',
-              config: providerRaw.config as HttpConfig,
-            } as McpHtttpProvider;
-            break;
-          case 'sse':
-            if (
-              !providerRaw.config ||
-              typeof providerRaw.config !== 'object' ||
-              !providerRaw.config.url
-            ) {
-              throw new Error(
-                `Invalid sse provider "${providerId}": config or config.url missing.`
-              );
-            }
-            validatedProviders[providerId] = {
-              id: providerId,
-              ...commonData,
-              type: 'sse',
-              config: providerRaw.config as SseConfig,
-            } as McpSseProvider;
-            break;
-          case 'websocket':
-            if (
-              !providerRaw.config ||
-              typeof providerRaw.config !== 'object' ||
-              !providerRaw.config.url
-            ) {
-              throw new Error(
-                `Invalid websocket provider "${providerId}": config or config.url missing.`
-              );
-            }
-            validatedProviders[providerId] = {
-              id: providerId,
-              ...commonData,
-              type: 'websocket',
-              config: providerRaw.config as WebSocketConfig,
-            } as McpWebSocketProvider;
-            break;
-          default:
-            throw new Error(
-              `Unknown provider type "${effectiveType}" for "${providerId}".`
-            );
-        }
-      }
-    }
-    loadedConfig = {
-      llm: parsedJson.llm,
-      mcpProviders: validatedProviders,
-      $schema: parsedJson.$schema,
-      version: parsedJson.version,
-    };
-
+    loadedConfig = validationResult.data;
     return loadedConfig;
   } catch (error: any) {
     console.error(
-      '[McpClientConfig:getMcpConfig] ERROR: Failed to load or parse mcp.config.json | Message: %s',
+      '[McpClientConfig:getMcpConfig] ERROR: Failed to load or validate mcp.config.json | Message: %s',
       error.message
     );
     throw new Error(

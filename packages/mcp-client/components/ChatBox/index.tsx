@@ -8,7 +8,7 @@ import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
-import type { Message as VercelAIMessage } from 'ai';
+import type { ChatRequestOptions, Message as VercelAIMessage } from 'ai';
 import * as React from 'react';
 import type { ChatBoxProps, Message } from './types';
 
@@ -57,7 +57,15 @@ export default function ChatBox(props: ChatBoxProps) {
     api: api,
     initialMessages,
     initialInput,
-    onFinish,
+    onFinish: (message) => {
+      console.log(
+        '[ChatBox:useChat:onFinish] INFO: Chat processing finished. | Message: %o',
+        message
+      );
+      if (onFinish) {
+        onFinish(message);
+      }
+    },
     onError: (e: Error) => {
       console.error(
         '[ChatBox:useChat] ERROR: Chat error | Message: %s, Error: %o',
@@ -149,6 +157,14 @@ export default function ChatBox(props: ChatBoxProps) {
     },
   });
 
+  // Log status changes
+  React.useEffect(() => {
+    console.log(
+      '[ChatBox:useChat:status] INFO: Status changed. | Status: %s',
+      status
+    );
+  }, [status]);
+
   // Vercel AI SDK useChat status can be 'idle', 'loading', 'streaming'
   const isActive =
     (status as string) === 'loading' || (status as string) === 'streaming';
@@ -198,6 +214,7 @@ export default function ChatBox(props: ChatBoxProps) {
     // Set the messages to the history up to the point of the user message,
     // then call reload to get a new assistant response.
     setMessages(historyToReload as VercelAIMessage[]); // Type assertion as Vercel AI SDK Message type
+    console.log('[ChatBox:handleRegenerateResponse] INFO: Calling reload().');
     reload(); // Reload will use the newly set messages
   };
 
@@ -226,6 +243,7 @@ export default function ChatBox(props: ChatBoxProps) {
       historyToReload
     );
     setMessages(historyToReload as VercelAIMessage[]);
+    console.log('[ChatBox:handleEditSubmit] INFO: Calling reload().');
     reload();
   };
 
@@ -264,12 +282,38 @@ export default function ChatBox(props: ChatBoxProps) {
 
   const contextValue = {
     rootId,
-    slots,
-    slotProps,
-    disableUserAvatar,
-    disableBotAvatar,
-    onRegenerate: handleRegenerateResponse,
-    onEditSubmit: handleEditSubmit,
+    messages: messages as Message[], // Cast to internal Message type
+    input,
+    handleInputChange,
+    handleSubmit: (
+      e: React.FormEvent<HTMLFormElement>,
+      options?: ChatRequestOptions
+    ) => {
+      console.log(
+        '[ChatBox:handleSubmit] INFO: Form submitted. | Event: %o, Options: %o',
+        e,
+        options
+      );
+      handleSubmit(e, options);
+    },
+    status: status as string,
+    error,
+    stop: handleStopProcessing, // Use the enhanced stop handler
+    reload: () => {
+      console.log('[ChatBox:reload] INFO: Calling reload().');
+      reload();
+    },
+    setMessages: setMessages as (messages: Message[]) => void, // Cast to internal Message type
+    onRegenerate: handleRegenerateResponse, // Provide regenerate handler
+    onEditSubmit: handleEditSubmit, // Provide edit submit handler
+    showFileSelector: !!showFileSelector, // Coerce to boolean
+    showVoiceInput: !!showVoiceInput, // Coerce to boolean
+    messageActions,
+    renderMessage,
+    slots: chatMessageRendererSlots,
+    slotProps: chatMessageRendererSlotProps, // Pass down slotProps
+    disableUserAvatar, // Pass down disableUserAvatar
+    disableBotAvatar, // Pass down disableBotAvatar
   };
 
   return (

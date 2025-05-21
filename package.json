@@ -1,17 +1,49 @@
 {
   "name": "mcp-e2e",
   "version": "1.0.0",
-  "description": "",
+  "description": "Model Context Protocol (MCP) End-to-End Implementation",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev:client": "pnpm --filter \"@mcp-e2e/mcp-client\" dev",
-    "build:client": "pnpm --filter \"@mcp-e2e/mcp-client\" build",
-    "start:client": "pnpm --filter \"@mcp-e2e/mcp-client\" start",
-    "lint:client": "pnpm --filter \"@mcp-e2e/mcp-client\" lint"
+    "clean": "pnpm -r clean",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "dev": "pnpm -r dev",
+    "start": "pnpm -r start",
+    "client:dev": "pnpm --filter \"@mcp-e2e/mcp-client\" dev",
+    "client:build": "pnpm --filter \"@mcp-e2e/mcp-client\" build",
+    "client:start": "pnpm --filter \"@mcp-e2e/mcp-client\" start",
+    "client:lint": "pnpm --filter \"@mcp-e2e/mcp-client\" lint",
+    "server:clean": "pnpm --filter \"@mcp-e2e/mcp-server\" clean",
+    "server:build": "pnpm --filter \"@mcp-e2e/mcp-server\" build",
+    "server:lint": "pnpm --filter \"@mcp-e2e/mcp-server\" lint",
+    "server:test": "pnpm --filter \"@mcp-e2e/mcp-server\" test",
+    "server:dev:all": "pnpm --filter \"@mcp-e2e/mcp-server\" dev",
+    "server:start:all": "pnpm --filter \"@mcp-e2e/mcp-server\" start",
+    "server:http:dev": "pnpm --filter \"@mcp-e2e/mcp-server\" dev:http",
+    "server:http:start": "pnpm --filter \"@mcp-e2e/mcp-server\" start:http",
+    "server:sse:dev": "pnpm --filter \"@mcp-e2e/mcp-server\" dev:sse",
+    "server:sse:start": "pnpm --filter \"@mcp-e2e/mcp-server\" start:sse",
+    "server:websocket:dev": "pnpm --filter \"@mcp-e2e/mcp-server\" dev:websocket",
+    "server:websocket:start": "pnpm --filter \"@mcp-e2e/mcp-server\" start:websocket",
+    "server:stdio:dev": "pnpm --filter \"@mcp-e2e/mcp-server\" dev:stdio",
+    "server:stdio:start": "pnpm --filter \"@mcp-e2e/mcp-server\" start:stdio"
   },
-  "keywords": [],
+  "keywords": [
+    "mcp",
+    "protocol",
+    "server",
+    "client",
+    "websocket",
+    "sse",
+    "http",
+    "stdio"
+  ],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@10.10.0"
+  "packageManager": "pnpm@10.10.0",
+  "devDependencies": {
+    "typescript": "^5.0.3",
+    "ts-node": "^10.9.2"
+  }
 }

@@ -111,12 +111,12 @@ const BotTool: React.FC<BotToolProps> = ({
   return (
     <Accordion
       id={id}
-      sx={(theme) => ({
+      sx={{
         mb: 1,
         width: '100%',
-        bgcolor: theme.palette.grey[100],
+        bgcolor: 'grey.100',
         ...sx,
-      })}
+      }}
     >
       <AccordionSummary
         expandIcon={<ExpandMoreIcon />}

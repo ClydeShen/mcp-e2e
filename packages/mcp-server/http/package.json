@@ -1,13 +1,19 @@
 {
-  "name": "@mcp-e2e/example-http-server",
+  "name": "@mcp-e2e/mcp-server-http",
   "version": "1.0.0",
-  "description": "Example http MCP server",
+  "description": "HTTP transport for MCP server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "ts-node-dev --respawn server.ts",
+    "test": "jest",
+    "lint": "eslint . --ext .ts"
   },
-  "keywords": [],
+  "keywords": [
+    "mcp",
+    "http",
+    "server"
+  ],
   "author": "",
   "license": "ISC"
 }

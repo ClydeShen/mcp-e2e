@@ -1,13 +1,19 @@
 {
-  "name": "@mcp-e2e/example-stdio-server",
+  "name": "@mcp-e2e/mcp-server-stdio",
   "version": "1.0.0",
-  "description": "Example stdio MCP server",
+  "description": "STDIO transport for MCP server",
   "main": "echo.js",
   "scripts": {
     "start": "node echo.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "ts-node-dev --respawn echo.ts",
+    "test": "jest",
+    "lint": "eslint . --ext .ts"
   },
-  "keywords": [],
+  "keywords": [
+    "mcp",
+    "stdio",
+    "server"
+  ],
   "author": "",
   "license": "ISC"
 }

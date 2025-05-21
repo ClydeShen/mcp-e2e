@@ -1,11 +1,10 @@
-import {
-  AppConfig,
-  getLLMConfig,
-  getMcpConfig,
+import { getLLMConfig, getMcpConfig } from '@/lib/mcp-client-config';
+import type {
   LLMConfig,
   McpProviderConfig,
+  McpSseProvider,
   McpStdioProvider,
-} from '@/lib/mcp-client-config';
+} from '@/lib/mcp-config.schema';
 import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import {
@@ -19,8 +18,8 @@ import {
 } from 'ai';
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from 'ai/mcp-stdio';
 // Removed imports for SseMCPTransport and WebSocketMCPTransport as they are not found
-// import { Experimental_SseMCPTransport as SseMCPTransport } from 'ai/mcp-sse';
-// import { Experimental_WebSocketMCPTransport as WebSocketMCPTransport } from 'ai/mcp-websocket';
+// import { Experimental_SseMCPTransport as SseMCPTransport } from 'ai/experimental/mcp-sse'; // Adjusted path
+// import { Experimental_WebSocketMCPTransport as WebSocketMCPTransport } from 'ai/experimental/mcp-websocket'; // Adjusted path
 import { NextRequest, NextResponse } from 'next/server';
 
 // Define a type for the MCPClient based on the return type of createMCPClient
@@ -162,29 +161,27 @@ async function _initializeMcpClientAndTools(
   // Directly use providerConfig.type as it's already derived and validated by getMcpConfig
   switch (providerConfig.type) {
     case 'stdio':
-      // Cast to McpStdioProvider is safe here due to the switch case
       const stdioConfig = providerConfig as McpStdioProvider;
-      // The 'command' field is guaranteed by McpStdioProvider type
       transport = new StdioMCPTransport({
         command: stdioConfig.command,
         args: stdioConfig.args,
         env: stdioConfig.env,
       });
       break;
-    // Cases for 'sse' and 'websocket' are removed as transports are not found.
-    // The default case will now handle them.
-    // case 'sse':
-    //   const sseConfig = providerConfig as McpSseProvider;
-    //   transport = new SseMCPTransport({
-    //     url: sseConfig.config.url,
-    //   });
-    //   break;
-    // case 'websocket':
-    //   const wsConfig = providerConfig as McpWebSocketProvider;
-    //   transport = new WebSocketMCPTransport({
-    //     url: wsConfig.config.url,
-    //   });
-    //   break;
+    case 'sse':
+      const sseConfig = providerConfig as McpSseProvider;
+      transport = {
+        type: 'sse',
+        url: sseConfig.config.url,
+        // TODO: Add headers from sseConfig.config.headers if needed and supported by your SseConfig schema
+      } as any; // Cast to any to satisfy type checker, runtime follows docs
+      break;
+    /* case 'websocket':
+      const wsConfig = providerConfig as McpWebSocketProvider;
+      transport = new WebSocketMCPTransport({
+        url: wsConfig.config.url,
+      });
+      break; */
     default:
       console.warn(
         '[ChatHandler:_initializeMcpClientAndTools] WARN: Unsupported provider type for auto-discovery | ProviderID: %s, Type: %s',
@@ -241,196 +238,274 @@ async function _initializeMcpClientAndTools(
 // Error handler function as suggested by AI SDK documentation
 function vercelAiErrorHandler(error: unknown): string {
   if (error == null) {
+    console.warn(
+      '[ChatHandler:vercelAiErrorHandler] WARN: Received null or undefined error object.'
+    );
     return 'Unknown error';
   }
   if (typeof error === 'string') {
+    console.log(
+      '[ChatHandler:vercelAiErrorHandler] INFO: Error is a string. | Error: %s',
+      error
+    );
     return error;
   }
   if (error instanceof Error) {
     // Log the full error on the server for more details
     console.error(
-      '[ChatHandler:vercelAiErrorHandler] ERROR: Detailed error from streamText | Error: %o',
-      error
+      '[ChatHandler:vercelAiErrorHandler] ERROR: Detailed error from streamText | Error Name: %s, Message: %s, Stack: %s',
+      error.name,
+      error.message,
+      error.stack
     );
-    return error.message; // Send only the message to the client
+    return error.message; // Return only the message to the client for brevity
   }
-  // Log the full error object if it's not an Error instance
-  console.error(
-    '[ChatHandler:vercelAiErrorHandler] ERROR: Detailed non-Error object from streamText | Error: %o',
+  console.warn(
+    '[ChatHandler:vercelAiErrorHandler] WARN: Unknown error type. | Error: %o',
     error
   );
-  try {
-    return JSON.stringify(error);
-  } catch (e) {
-    return 'Unstringifyable error object';
-  }
+  return 'An unexpected error occurred.';
 }
 
 export async function POST(req: NextRequest) {
-  const activeMcpClients: InferredMCPClient[] = []; // Store active clients for cleanup
+  console.log(
+    '[ChatHandler:POST] INFO: Received POST request. | URL: %s, Headers: %o',
+    req.url,
+    Object.fromEntries(req.headers)
+  );
+  const requestTimestamp = Date.now();
+  let llmConfig: LLMConfig | undefined;
+  let fullAppConfig: ReturnType<typeof getMcpConfig>;
+
+  // Step 0: Load Critical Configurations First & Catch Early
   try {
-    const validationResult = await _validateChatRequest(req);
-    if (validationResult.errorResponse) return validationResult.errorResponse;
-    const messages: Message[] = validationResult.messages!;
-
+    console.log(
+      '[ChatHandler:POST] INFO: Attempting to load critical configurations (LLM & MCP).'
+    );
     const llmConfigResult = _getValidatedLLMConfig();
-    if (llmConfigResult.errorResponse) return llmConfigResult.errorResponse;
-    const llmConfig: LLMConfig = llmConfigResult.llmConfig!;
+    if (llmConfigResult.errorResponse) {
+      console.warn(
+        '[ChatHandler:POST] WARN: LLM configuration loading/validation failed early. | Status: %s',
+        llmConfigResult.errorResponse.status
+      );
+      return llmConfigResult.errorResponse;
+    }
+    llmConfig = llmConfigResult.llmConfig!;
+    fullAppConfig = getMcpConfig(); // This can throw if mcp.config.json is invalid/missing
+    console.log(
+      '[ChatHandler:POST] INFO: Critical configurations loaded successfully.'
+    );
+  } catch (configError: any) {
+    console.error(
+      '[ChatHandler:POST] CRITICAL_CONFIG_ERROR: Failed to load initial configurations. | ErrorName: %s, ErrorMessage: %s',
+      configError.name,
+      configError.message // Stack can be too verbose for this specific log, but good for the generic catch
+    );
+    return NextResponse.json(
+      {
+        error: 'ServerConfigurationError',
+        message:
+          'Critical server configuration is missing or invalid. Please contact an administrator.',
+        details: configError.message, // Provide some technical detail
+      },
+      { status: 503 } // Service Unavailable due to config issue
+    );
+  }
 
-    const appConfig: AppConfig = getMcpConfig();
-    // This will hold the original tools discovered from MCP, including .execute
-    const discoveredMcpToolsCombined: Record<string, Tool> = {};
+  // Main processing block - wrapped in its own try/catch for operational errors
+  try {
+    // 1. Validate Request
+    console.log('[ChatHandler:POST] INFO: Validating chat request...');
+    const {
+      messages: originalMessages,
+      errorResponse: validationErrorResponse,
+    } = await _validateChatRequest(req);
+    if (validationErrorResponse) {
+      console.warn(
+        '[ChatHandler:POST] WARN: Chat request validation failed. | Status: %s',
+        validationErrorResponse.status
+      );
+      return validationErrorResponse;
+    }
+    console.log(
+      '[ChatHandler:POST] INFO: Chat request validated successfully.'
+    );
 
-    for (const providerId in appConfig.mcpProviders) {
-      if (
-        Object.prototype.hasOwnProperty.call(appConfig.mcpProviders, providerId)
-      ) {
-        const providerConfig = appConfig.mcpProviders[providerId];
-        if (providerConfig.enabled !== false) {
-          const initResult = await _initializeMcpClientAndTools(
-            providerId,
-            providerConfig
+    const currentMessageContent =
+      originalMessages![originalMessages!.length - 1].content;
+    console.log(
+      '[ChatHandler:POST] INFO: Current message content. | Content: %s',
+      typeof currentMessageContent === 'string'
+        ? currentMessageContent.substring(0, 100) + '...'
+        : 'Non-string content'
+    );
+
+    // LLM Config is already validated and loaded into llmConfig variable
+    console.log(
+      '[ChatHandler:POST] INFO: Using pre-validated LLM configuration. | Model: %s',
+      llmConfig?.model // llmConfig is guaranteed to be defined here by successful config load phase
+    );
+
+    // 3. Initialize MCP Clients and Discover Tools
+    const allDiscoveredTools: Record<string, Tool> = {};
+    const activeMcpClients: InferredMCPClient[] = [];
+
+    if (fullAppConfig.mcpProviders) {
+      console.log(
+        '[ChatHandler:POST] INFO: Initializing MCP providers and discovering tools...'
+      );
+      for (const providerId in fullAppConfig.mcpProviders) {
+        const providerConfig = fullAppConfig.mcpProviders[providerId];
+        if (!providerConfig.enabled) {
+          console.log(
+            '[ChatHandler:POST] INFO: Skipping disabled MCP provider. | ProviderID: %s',
+            providerConfig.id
           );
-          if (initResult.errorResponse) {
-            console.error(
-              '[ChatHandler:POST] ERROR: Failed to initialize provider or fetch its tools | ProviderID: %s, Status: %s, Response: %o',
-              providerId,
-              initResult.errorResponse.statusText,
-              await initResult.errorResponse.json().catch(() => ({}))
-            );
-          } else if (initResult.mcpClient && initResult.discoveredMcpTools) {
-            activeMcpClients.push(initResult.mcpClient);
-            for (const toolName in initResult.discoveredMcpTools) {
-              if (
-                Object.prototype.hasOwnProperty.call(
-                  initResult.discoveredMcpTools,
-                  toolName
-                )
-              ) {
-                const prefixedToolName = `${providerId}_${toolName}`;
-                discoveredMcpToolsCombined[prefixedToolName] =
-                  initResult.discoveredMcpTools[toolName];
+          continue;
+        }
+        console.log(
+          '[ChatHandler:POST] INFO: Initializing MCP provider. | ProviderID: %s, Type: %s',
+          providerConfig.id,
+          providerConfig.type
+        );
+        const {
+          mcpClient,
+          discoveredMcpTools,
+          errorResponse: mcpInitError,
+        } = await _initializeMcpClientAndTools(
+          providerConfig.id,
+          providerConfig
+        );
+
+        if (mcpInitError) {
+          console.warn(
+            '[ChatHandler:POST] WARN: Failed to initialize MCP provider or discover tools, skipping this provider. | ProviderID: %s, Error Status: %s',
+            providerConfig.id,
+            mcpInitError.status
+          );
+          continue;
+        }
+
+        if (mcpClient) {
+          activeMcpClients.push(mcpClient);
+        }
+
+        if (discoveredMcpTools) {
+          for (const toolName in discoveredMcpTools) {
+            if (
+              Object.prototype.hasOwnProperty.call(discoveredMcpTools, toolName)
+            ) {
+              if (allDiscoveredTools[toolName]) {
+                console.warn(
+                  '[ChatHandler:POST] WARN: Duplicate tool name found across MCP providers. Overwriting. | ToolName: %s, NewProvider: %s',
+                  toolName,
+                  providerConfig.id
+                );
               }
+              allDiscoveredTools[toolName] = discoveredMcpTools[toolName];
             }
-          } else if (initResult.mcpClient) {
-            activeMcpClients.push(initResult.mcpClient);
-            console.info(
-              '[ChatHandler:POST] INFO: Provider initialized but exposed no tools | ProviderID: %s',
-              providerId
-            );
           }
-        } else {
-          console.info(
-            '[ChatHandler:POST] INFO: Skipping disabled provider | ProviderID: %s',
-            providerId
+          console.log(
+            '[ChatHandler:POST] INFO: Successfully discovered tools for provider. | ProviderID: %s, Tools: %o',
+            providerConfig.id,
+            Object.keys(discoveredMcpTools)
           );
         }
       }
-    }
-
-    if (Object.keys(discoveredMcpToolsCombined).length === 0) {
-      console.warn(
-        '[ChatHandler:POST] WARN: No tools were successfully loaded from any provider for LLM use.'
+      console.log(
+        '[ChatHandler:POST] INFO: MCP providers initialization and tool discovery complete. | TotalDiscoveredTools: %s, ToolNames: %o',
+        Object.keys(allDiscoveredTools).length,
+        Object.keys(allDiscoveredTools)
+      );
+    } else {
+      console.log(
+        '[ChatHandler:POST] INFO: No MCP providers configured or found in mcp.config.json. Proceeding without MCP tools.'
       );
     }
 
+    // 4. Prepare and Execute streamText Call
+    console.log('[ChatHandler:POST] INFO: Preparing streamText call...');
     const streamTextPayload = _prepareStreamTextCallPayload(
-      llmConfig,
-      messages,
-      discoveredMcpToolsCombined
+      llmConfig!, // llmConfig is defined due to early check
+      originalMessages!,
+      allDiscoveredTools
+    );
+    console.log(
+      '[ChatHandler:POST] INFO: Executing streamText call. | Model: %s, Temperature: %s, MaxSteps: %s, Tools: %o',
+      llmConfig?.model,
+      streamTextPayload.temperature,
+      streamTextPayload.maxSteps,
+      Object.keys(streamTextPayload.tools || {})
     );
 
-    let result;
+    // Inner try for streamText specific operations and its own finally for MCP client cleanup
     try {
-      result = await streamText({
+      const result = await streamText({
         ...streamTextPayload,
         onFinish: async (event) => {
-          // onFinish signals completion. Detailed errors are handled by vercelAiErrorHandler or outer catch.
+          console.log(
+            '[ChatHandler:POST:streamText:onFinish] INFO: streamText finished. | Usage: %o, FinishReason: %s',
+            event.usage,
+            event.finishReason
+          );
+          // This onFinish is for the LLM stream itself. MCP clients are closed after the entire request handler for streamText is done.
         },
       });
-    } catch (streamTextError: any) {
-      console.error(
-        '[ChatHandler:POST] ERROR: Error directly from streamText call | Error: %o, Message: %s, Stack: %s, Cause: %o',
-        streamTextError,
-        streamTextError.message,
-        streamTextError.stack,
-        streamTextError.cause
+      console.log(
+        '[ChatHandler:POST] INFO: streamText call initiated successfully, streaming response...'
       );
-      throw streamTextError;
-    }
-
-    return result.toDataStreamResponse({
-      getErrorMessage: vercelAiErrorHandler,
-    });
-  } catch (error: any) {
-    console.error(
-      '[ChatHandler:POST] ERROR: POST handler error | Error: %o',
-      error
-    );
-    // Log additional properties if they exist
-    if (error.message) {
-      console.error('[ChatHandler:POST] ERROR_MESSAGE: %s', error.message);
-    }
-    if (error.stack) {
-      console.error('[ChatHandler:POST] ERROR_STACK: %s', error.stack);
-    }
-    if (error.cause) {
-      console.error('[ChatHandler:POST] ERROR_CAUSE: %o', error.cause);
-    }
-    try {
-      console.error(
-        '[ChatHandler:POST] ERROR_FULL_OBJECT: %s',
-        JSON.stringify(error, Object.getOwnPropertyNames(error))
-      );
-    } catch (e) {
-      console.error(
-        '[ChatHandler:POST] ERROR: Could not stringify full error object | StringifyError: %o',
-        e
-      );
-    }
-
-    let errorMessage = 'Handler error'; // Default error message
-    const errorStatus = 500;
-
-    if (
-      typeof error === 'object' &&
-      error !== null &&
-      'message' in error &&
-      typeof error.message === 'string'
-    ) {
-      errorMessage = error.message;
-    } else if (
-      error instanceof Error &&
-      error.message.includes('.chat is not a function')
-    ) {
-      errorMessage =
-        'Internal configuration error: LLM adapter setup failed. Check modelId and adapter compatibility.';
-    } // else, errorMessage remains 'Handler error' if the caught error isn't an object with a message
-
-    return NextResponse.json({ error: errorMessage }, { status: errorStatus });
-  } finally {
-    // MCP client closing
-    if (activeMcpClients.length > 0) {
-      console.info(
-        '[ChatHandler:POST_Finally] INFO: Ensuring %d MCP client(s) are closed.',
-        activeMcpClients.length
+      return result.toDataStreamResponse();
+    } finally {
+      // This finally block ensures MCP clients are closed whether streamText succeeds or fails within this inner try
+      console.log(
+        '[ChatHandler:POST:streamText:finally] INFO: Closing active MCP clients after streamText operation...'
       );
       for (const client of activeMcpClients) {
-        if (client && typeof client.close === 'function') {
-          await client
-            .close()
-            .catch((closeError: Error) =>
-              console.error(
-                '[ChatHandler:POST_Finally] ERROR: Error closing an MCP client | Error: %o',
-                closeError
-              )
-            );
-        } else {
-          console.warn(
-            '[ChatHandler:POST_Finally] WARN: Attempted to close an invalid or already closed client.'
+        try {
+          await client.close();
+          console.log(
+            '[ChatHandler:POST:streamText:finally] INFO: MCP client closed successfully.'
+          );
+        } catch (closeError: any) {
+          console.error(
+            '[ChatHandler:POST:streamText:finally] ERROR: Failed to close MCP client. | Error: %o',
+            closeError
           );
         }
       }
+      console.log(
+        '[ChatHandler:POST:streamText:finally] INFO: All active MCP clients processed for closure.'
+      );
+      const duration = Date.now() - requestTimestamp;
+      console.log(
+        '[ChatHandler:POST:streamText:finally] INFO: streamText processing block finished. | Duration: %sms',
+        duration
+      );
     }
+  } catch (error: any) {
+    // This is the main operational error handler
+    console.error(
+      '[ChatHandler:POST] CRITICAL_OPERATIONAL_ERROR: Error during main processing. | ErrorName: %s, ErrorMessage: %s, Stack: %s',
+      error.name,
+      error.message,
+      error.stack // Full stack for unexpected operational errors
+    );
+    // Ensure MCP clients are closed (redundant if the inner finally always runs, but safe)
+    // Note: activeMcpClients might not be in scope here if the error happened before its definition in the outer try.
+    // However, the structure ensures it is defined if we reach this catch from within the main processing block.
+
+    const duration = Date.now() - requestTimestamp;
+    console.error(
+      '[ChatHandler:POST] CRITICAL_OPERATIONAL_ERROR: Request failed. | Duration: %sms',
+      duration
+    );
+    return NextResponse.json(
+      {
+        error:
+          'Failed to process chat request due to an internal server error.',
+        details: vercelAiErrorHandler(error), // Use the helper to format the error message
+      },
+      { status: 500 }
+    );
   }
 }
