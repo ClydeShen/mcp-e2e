@@ -80,79 +80,81 @@ export default function ChatBox(props: ChatBoxProps) {
     async onToolCall({ toolCall }) {
       const { toolName, args } = toolCall;
 
-      if (toolName.startsWith('filesystem_')) {
-        const providerId = 'filesystem';
-        // Extract the actual command name, e.g., 'directory_tree' from 'filesystem_directory_tree'
-        const commandName = toolName.substring(providerId.length + 1);
-
-        // Construct the payload expected by the filesystem STDIO server
-        const stdioServerPayload = {
-          command: commandName,
-          args: args, // The arguments from the LLM for that specific command
-        };
-
-        try {
-          console.log(
-            '[ChatBox:onToolCall] INFO: Executing filesystem tool | ToolName: %s, ProviderID: %s, Payload: %o',
-            toolName,
-            providerId,
-            stdioServerPayload
-          );
-          const response = await fetch('/api/execute-tool', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              providerId: providerId,
-              toolArgs: stdioServerPayload, // This will be stringified again by execute-tool route for inputData
-            }),
-          });
-
-          if (!response.ok) {
-            const errorData = await response
-              .json()
-              .catch(() => ({ error: response.statusText }));
-            console.error(
-              '[ChatBox:onToolCall] ERROR: API error for filesystem tool | ToolName: %s, Error: %s',
-              toolName,
-              errorData.error || response.statusText
-            );
-            throw new Error(
-              `Tool execution via API failed for ${toolName}: ${
-                errorData.error || response.statusText
-              }`
-            );
-          }
-
-          const responseData = await response.json();
-          console.log(
-            '[ChatBox:onToolCall] DEBUG: Result from API for filesystem tool | ToolName: %s, Result: %o',
-            toolName,
-            responseData.result
-          );
-          return responseData.result; // The AI SDK expects the direct result here
-        } catch (e: any) {
-          console.error(
-            '[ChatBox:onToolCall] ERROR: Failed to execute filesystem tool via API | ToolName: %s, Error: %o',
-            toolName,
-            e
-          );
-          // Let the error propagate to useChat's onError or throw it
-          // To make it visible in UI, ensure it's an Error object or string
-          throw new Error(
-            `Execution failed for ${toolName}: ${e.message || e.toString()}`
-          );
-        }
-      } else {
-        // Fallback for other tools (e.g., aws-documentation) or if a tool isn't handled above
-        console.warn(
-          '[ChatBox:onToolCall] WARN: Simulating tool call for unhandled tool | ToolName: %s, Args: %o',
+      try {
+        console.log(
+          '[ChatBox:onToolCall] INFO: Executing tool | ToolName: %s, Args: %o',
           toolName,
           args
         );
-        const minimalResultString = `Tool ${toolName} called (simulated). Args: ${JSON.stringify(
-          args
-        )}.`;
-        return minimalResultString;
+
+        // Extract provider ID from tool name if present (e.g., 'filesystem_directory_tree' -> 'filesystem')
+        const providerSeparatorIndex = toolName.indexOf('_');
+
+        // If no provider ID in the tool name, use the tool name itself as the provider
+        // This assumes each tool without a prefix is its own provider
+        const providerId =
+          providerSeparatorIndex !== -1
+            ? toolName.substring(0, providerSeparatorIndex)
+            : toolName;
+
+        // Get the command name - either after the separator or the full tool name if no separator
+        const commandName =
+          providerSeparatorIndex !== -1
+            ? toolName.substring(providerSeparatorIndex + 1)
+            : toolName;
+
+        console.log(
+          '[ChatBox:onToolCall] INFO: Extracted tool info | ProviderID: %s, Command: %s',
+          providerId,
+          commandName
+        );
+
+        // Construct the payload that matches the server's expected format
+        const response = await fetch('/api/execute-tool', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            llmToolName: toolName,
+            toolArgsFromLlm: {
+              provider_id_for_tool_execution: providerId,
+              command: commandName,
+              arguments: args,
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response
+            .json()
+            .catch(() => ({ error: response.statusText }));
+          console.error(
+            '[ChatBox:onToolCall] ERROR: API error | ToolName: %s, Error: %s',
+            toolName,
+            errorData.error || response.statusText
+          );
+          throw new Error(
+            `Tool execution via API failed for ${toolName}: ${
+              errorData.error || response.statusText
+            }`
+          );
+        }
+
+        const responseData = await response.json();
+        console.log(
+          '[ChatBox:onToolCall] DEBUG: Result from API | ToolName: %s, Result: %o',
+          toolName,
+          responseData.result
+        );
+        return responseData.result;
+      } catch (e: any) {
+        console.error(
+          '[ChatBox:onToolCall] ERROR: Failed to execute tool via API | ToolName: %s, Error: %o',
+          toolName,
+          e
+        );
+        throw new Error(
+          `Execution failed for ${toolName}: ${e.message || e.toString()}`
+        );
       }
     },
   });

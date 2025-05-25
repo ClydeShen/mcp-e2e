@@ -22,7 +22,7 @@ const McpProviderBaseSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   capabilities: z.array(z.string()).optional(),
-  enabled: z.boolean().optional(),
+  disabled: z.boolean().optional(),
 });
 
 // Provider-specific schemas

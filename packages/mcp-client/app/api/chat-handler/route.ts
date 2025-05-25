@@ -356,7 +356,7 @@ export async function POST(req: NextRequest) {
       );
       for (const providerId in fullAppConfig.mcpProviders) {
         const providerConfig = fullAppConfig.mcpProviders[providerId];
-        if (!providerConfig.enabled) {
+        if (providerConfig.disabled) {
           console.log(
             '[ChatHandler:POST] INFO: Skipping disabled MCP provider. | ProviderID: %s',
             providerConfig.id
@@ -391,24 +391,32 @@ export async function POST(req: NextRequest) {
         }
 
         if (discoveredMcpTools) {
-          for (const toolName in discoveredMcpTools) {
+          for (const originalToolName in discoveredMcpTools) {
             if (
-              Object.prototype.hasOwnProperty.call(discoveredMcpTools, toolName)
+              Object.prototype.hasOwnProperty.call(
+                discoveredMcpTools,
+                originalToolName
+              )
             ) {
-              if (allDiscoveredTools[toolName]) {
+              const prefixedToolName = `${providerConfig.id}_${originalToolName}`;
+              if (allDiscoveredTools[prefixedToolName]) {
                 console.warn(
-                  '[ChatHandler:POST] WARN: Duplicate tool name found across MCP providers. Overwriting. | ToolName: %s, NewProvider: %s',
-                  toolName,
+                  '[ChatHandler:POST] WARN: Duplicate prefixed tool name found. Overwriting. | PrefixedToolName: %s, NewProvider: %s',
+                  prefixedToolName,
                   providerConfig.id
                 );
               }
-              allDiscoveredTools[toolName] = discoveredMcpTools[toolName];
+              allDiscoveredTools[prefixedToolName] =
+                discoveredMcpTools[originalToolName];
             }
           }
           console.log(
-            '[ChatHandler:POST] INFO: Successfully discovered tools for provider. | ProviderID: %s, Tools: %o',
+            '[ChatHandler:POST] INFO: Successfully discovered tools for provider. | ProviderID: %s, PrefixedToolsCount: %s, ExamplePrefixedTool: %s',
             providerConfig.id,
-            Object.keys(discoveredMcpTools)
+            Object.keys(discoveredMcpTools).length,
+            Object.keys(discoveredMcpTools).length > 0
+              ? `${providerConfig.id}_${Object.keys(discoveredMcpTools)[0]}`
+              : 'N/A'
           );
         }
       }

@@ -2,14 +2,16 @@
   "llm": {
     "provider": "bedrock",
     "model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
-    "defaultSystemPrompt": "You are a helpful AI. Today is {today_datetime}.",
+    "defaultSystemPrompt": "You are a helpful AI. You can use the following tools to help the user: 'aws-documentation', 'context7'",
     "temperature": 0.1,
     "maxTokens": 2048,
     "maxSteps": 20
   },
   "mcpProviders": {
     "aws-documentation": {
+      "id": "aws-documentation",
       "name": "AWS Documentation Agent",
+      "type": "stdio",
       "command": "uvx",
       "args": [
         "--from",
@@ -21,64 +23,13 @@
       }
     },
     "context7": {
+      "id": "context7",
       "name": "Context7 MCP Server",
+      "type": "stdio",
       "command": "cmd",
       "args": ["/c", "npx", "-y", "@upstash/context7-mcp@latest"],
       "disabled": false,
       "autoApprove": []
-    },
-    "example-stdio": {
-      "id": "example-stdio",
-      "name": "Example STDIO Server",
-      "type": "stdio",
-      "enabled": true,
-      "command": "pnpm",
-      "args": ["--filter", "@mcp-e2e/mcp-server", "dev:stdio"],
-      "env": {}
-    },
-    "example-http": {
-      "id": "example-http",
-      "name": "Example HTTP Server",
-      "type": "http",
-      "enabled": true,
-      "config": {
-        "url": "http://localhost:3001/mcp",
-        "method": "POST"
-      },
-      "command": "pnpm",
-      "args": ["--filter", "@mcp-e2e/mcp-server", "dev:http"],
-      "env": {
-        "MCP_HTTP_PORT": "3001"
-      }
-    },
-    "example-sse": {
-      "id": "example-sse",
-      "name": "Example SSE Server",
-      "type": "sse",
-      "enabled": true,
-      "config": {
-        "url": "http://localhost:3002/mcp-events",
-        "commandUrl": "http://localhost:3002/mcp-command"
-      },
-      "command": "pnpm",
-      "args": ["--filter", "@mcp-e2e/mcp-server", "dev:sse"],
-      "env": {
-        "MCP_SSE_PORT": "3002"
-      }
-    },
-    "example-websocket": {
-      "id": "example-websocket",
-      "name": "Example WebSocket Server",
-      "type": "websocket",
-      "enabled": true,
-      "config": {
-        "url": "ws://localhost:3003"
-      },
-      "command": "pnpm",
-      "args": ["--filter", "@mcp-e2e/mcp-server", "dev:websocket"],
-      "env": {
-        "MCP_WEBSOCKET_PORT": "3003"
-      }
     }
   }
 }

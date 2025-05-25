@@ -1,91 +1,16 @@
 import fs from 'fs';
 import path from 'path';
-import type { LLMConfig } from './mcp-config.schema';
+import type {
+  AppConfig,
+  LLMConfig,
+  McpProviderConfig,
+} from './mcp-config.schema';
 import { AppConfigSchema } from './mcp-config.schema';
 
 // --- Configuration Types ---
 
-// Config for providers OTHER than stdio (they have direct props)
-// interface BaseProviderSpecificConfig {} // Removed
-
-// export interface StdioConfig { // Removed
-//   // This type might become obsolete or represent direct props
-//   command: string; // Executable
-//   args?: string[];
-//   cwd?: string;
-//   env?: Record<string, string>;
-// }
-
-export interface SseConfig {
-  // Removed extension
-  url: string;
-  withCredentials?: boolean;
-}
-
-export interface WebSocketConfig {
-  // Removed extension
-  url: string;
-  protocols?: string[];
-}
-
-export interface HttpConfig {
-  // Removed extension
-  url: string;
-  method: string; // e.g., "GET", "POST"
-  headers?: Record<string, string>;
-}
-
+// Only keep ProviderType, remove all other local type/interface definitions
 export type ProviderType = 'stdio' | 'sse' | 'websocket' | 'http';
-
-// Base properties common to all provider objects (the value in the mcpProviders map)
-interface McpProviderBase {
-  name: string;
-  description?: string;
-  capabilities?: string[];
-  enabled?: boolean;
-}
-
-// Specific provider type configurations
-export interface McpStdioProvider extends McpProviderBase {
-  id: string;
-  type: 'stdio';
-  command: string;
-  args?: string[];
-  cwd?: string;
-  env?: Record<string, string>;
-}
-
-export interface McpHtttpProvider extends McpProviderBase {
-  id: string;
-  type: 'http';
-  config: HttpConfig;
-}
-
-export interface McpSseProvider extends McpProviderBase {
-  id: string;
-  type: 'sse';
-  config: SseConfig;
-}
-
-export interface McpWebSocketProvider extends McpProviderBase {
-  id: string;
-  type: 'websocket';
-  config: WebSocketConfig;
-}
-
-export type McpProviderConfig =
-  | McpStdioProvider
-  | McpHtttpProvider
-  | McpSseProvider
-  | McpWebSocketProvider;
-
-export interface AppConfig {
-  llm?: LLMConfig; // Optional global LLM config as per TR_CONFIG_008
-  mcpProviders: Record<string, McpProviderConfig>; // Changed from Omit<McpProviderConfig, 'id'>
-  // Optional root fields as per TR_CONFIG_002
-  $schema?: string;
-  version?: string;
-}
 
 // --- Configuration Loader ---
 
